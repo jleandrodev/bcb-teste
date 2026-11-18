@@ -55,16 +55,51 @@ describe('Operação (S5)', () => {
     expect(response.text).toContain('swagger-ui');
   });
 
-  it('erro de negócio e erro de formato saem no mesmo corpo: statusCode, code, message e details', async () => {
-    const business = await t.api.get('/clients/nao-existe');
-    const format = await t.api.post('/clients').send({});
+  it('a documentação descreve o corpo das respostas e os erros de cada rota', async () => {
+    const spec = (await t.api.get('/docs-json')).body;
+    const send = spec.paths['/messages'].post.responses;
 
-    expect(business.body).toEqual({ statusCode: 404, code: 'CLIENT_NOT_FOUND', message: expect.any(String) });
-    expect(format.body).toEqual({
-      statusCode: 400,
-      code: 'VALIDATION_FAILED',
-      message: expect.any(String),
-      details: { fields: expect.arrayContaining([expect.objectContaining({ field: 'name', problems: expect.any(Array) })]) },
+    expect(Object.keys(send).sort()).toEqual(['201', '400', '401', '402', '403', '404']);
+    expect(send['201'].content['application/json'].schema.$ref).toBe('#/components/schemas/SendMessageResponse');
+    expect(send['402'].content['application/json'].schema.$ref).toBe('#/components/schemas/ErrorResponse');
+    expect(Object.keys(spec.components.schemas.SendMessageResponse.properties).sort()).toEqual(
+      ['conversationId', 'cost', 'currentBalance', 'estimatedDelivery', 'id', 'status'].sort(),
+    );
+    expect(Object.keys(spec.components.schemas.ErrorResponse.properties).sort()).toEqual(['code', 'details', 'message', 'statusCode']);
+    expect(Object.keys(spec.paths['/messages/{id}/read'].patch.responses).sort()).toEqual(['200', '401', '404', '409']);
+    expect(Object.keys(spec.paths['/clients'].post.responses).sort()).toEqual(['201', '400', '409']);
+  });
+
+  describe('toda resposta de erro tem statusCode, code e message', () => {
+    it('erro de negócio', async () => {
+      const response = await t.api.get('/clients/nao-existe');
+
+      expect(response.body).toEqual({ statusCode: 404, code: 'CLIENT_NOT_FOUND', message: expect.any(String) });
+    });
+
+    it('erro de formato, com os campos recusados em details', async () => {
+      const response = await t.api.post('/clients').send({});
+
+      expect(response.body).toEqual({
+        statusCode: 400,
+        code: 'VALIDATION_FAILED',
+        message: expect.any(String),
+        details: { fields: expect.arrayContaining([expect.objectContaining({ field: 'name', problems: expect.any(Array) })]) },
+      });
+    });
+
+    it('rota inexistente', async () => {
+      const response = await t.api.get('/nao-existe');
+
+      expect(response.status).toBe(404);
+      expect(response.body).toEqual({ statusCode: 404, code: 'NOT_FOUND', message: expect.any(String) });
+    });
+
+    it('JSON malformado', async () => {
+      const response = await t.api.post('/clients').set('Content-Type', 'application/json').send('{ "name": ');
+
+      expect(response.status).toBe(400);
+      expect(response.body).toEqual({ statusCode: 400, code: 'BAD_REQUEST', message: expect.any(String) });
     });
   });
 });

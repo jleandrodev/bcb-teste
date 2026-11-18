@@ -87,6 +87,7 @@ describe('Consistência da cobrança (S2)', () => {
       const response = await sendTo(t, ana, 'não grava', 'urgent');
 
       expect(response.status).toBe(500);
+      expect(response.body).toEqual({ statusCode: 500, code: 'INTERNAL_ERROR', message: 'Erro interno' }); // sem vazar o detalhe
       expect((await balanceOf(t, ana)).balance).toBe(1);
       expect(await transactionsOf(t, ana)).toEqual([
         expect.objectContaining({ type: 'debit', amount: 0.5 }),

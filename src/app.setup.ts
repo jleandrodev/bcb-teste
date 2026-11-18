@@ -1,7 +1,7 @@
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { ValidationError } from './shared/domain/errors';
-import { DomainExceptionFilter } from './shared/http/domain-exception.filter';
+import { ErrorFilter } from './shared/http/error.filter';
 
 /**
  * Configuração global da aplicação, compartilhada entre `main.ts` e os testes e2e.
@@ -21,7 +21,7 @@ export function configureApp(app: INestApplication): INestApplication {
         }),
     }),
   );
-  app.useGlobalFilters(new DomainExceptionFilter());
+  app.useGlobalFilters(new ErrorFilter());
   app.enableCors();
 
   const openapi = new DocumentBuilder()
