@@ -1,0 +1,33 @@
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: bcb
+      POSTGRES_PASSWORD: bcb
+      POSTGRES_DB: bcb
+    ports:
+      - '5432:5432'
+    volumes:
+      - db-data:/var/lib/postgresql/data
+      - ./db/init-test-database.sql:/docker-entrypoint-initdb.d/init-test-database.sql:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U bcb -d bcb']
+      interval: 2s
+      timeout: 3s
+      retries: 20
+
+  api:
+    build: .
+    environment:
+      PERSISTENCE: postgres
+      DATABASE_URL: postgres://bcb:bcb@db:5432/bcb
+      # Entrega simulada lenta de propósito: dá tempo de ver a fila encher e a ordem de saída.
+      PROCESSING_DELAY_MS: 800
+    ports:
+      - '3000:3000'
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  db-data:
