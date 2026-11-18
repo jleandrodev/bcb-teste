@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: bcb
+          POSTGRES_PASSWORD: bcb
+          POSTGRES_DB: bcb_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U bcb -d bcb_test"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run build
+      - name: Testes unitários e de arquitetura
+        run: npm test
+      - name: Ponta a ponta com adaptadores em memória
+        run: npm run test:e2e
+      - name: Ponta a ponta e contrato dos repositórios com PostgreSQL
+        run: npm run test:pg
+      - name: Cobertura (todos os testes, com PostgreSQL)
+        run: npm run test:cov
+        env:
+          PERSISTENCE: postgres
+          DATABASE_URL: postgres://bcb:bcb@localhost:5432/bcb_test
