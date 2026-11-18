@@ -42,3 +42,27 @@ jobs:
         env:
           PERSISTENCE: postgres
           DATABASE_URL: postgres://bcb:bcb@localhost:5432/bcb_test
+
+  docker:
+    # Prova o primeiro comando do README: a imagem constrói, a aplicação sobe com o PostgreSQL
+    # do compose e a demonstração produz a ordem de entrega e a recusa por saldo.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker compose up --build --detach
+      - name: Espera a API responder
+        run: |
+          for attempt in $(seq 1 30); do
+            curl --fail --silent http://localhost:3000/health && exit 0
+            sleep 2
+          done
+          docker compose logs api
+          exit 1
+      - name: Demonstração
+        run: |
+          ./scripts/demo.sh | tee demo.log
+          grep --quiet "entrega: u1 u2 u3 n1 u4 u5 n2" demo.log
+          grep --quiet "HTTP 402" demo.log
+          grep --quiet "INSUFFICIENT_BALANCE" demo.log
+      - if: always()
+        run: docker compose down --volumes

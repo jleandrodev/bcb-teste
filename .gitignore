@@ -3,5 +3,3 @@ dist/
 coverage/
 .env
 *.tsbuildinfo
-# testes de aceitação instalados pela plataforma de estudo (não fazem parte da entrega)
-test/missions/

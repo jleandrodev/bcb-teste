@@ -6,7 +6,8 @@ services:
       POSTGRES_PASSWORD: bcb
       POSTGRES_DB: bcb
     ports:
-      - '5432:5432'
+      # DB_PORT=5433 docker compose up, se a 5432 já estiver ocupada por um PostgreSQL local.
+      - '${DB_PORT:-5432}:5432'
     volumes:
       - db-data:/var/lib/postgresql/data
       - ./db/init-test-database.sql:/docker-entrypoint-initdb.d/init-test-database.sql:ro
