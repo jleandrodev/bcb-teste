@@ -1,0 +1,73 @@
+### Requisições prontas para a extensão REST Client (VS Code) ou o cliente HTTP do IntelliJ.
+### A mesma API está documentada em http://localhost:3000/docs
+@api = http://localhost:3000
+@document = 52998224725
+
+### Saúde
+GET {{api}}/health
+
+### Cadastrar cliente pré-pago
+# @name client
+POST {{api}}/clients
+Content-Type: application/json
+
+{ "name": "Ana", "documentId": "529.982.247-25", "documentType": "CPF", "planType": "prepaid", "balance": 10 }
+
+### Cadastrar cliente pós-pago
+POST {{api}}/clients
+Content-Type: application/json
+
+{ "name": "Loja", "documentId": "11.222.333/0001-81", "documentType": "CNPJ", "planType": "postpaid", "limit": 50 }
+
+### Autenticar (devolve o token)
+# @name auth
+POST {{api}}/auth
+Content-Type: application/json
+
+{ "documentId": "{{document}}", "documentType": "CPF" }
+
+### Saldo
+GET {{api}}/clients/{{client.response.body.id}}/balance
+
+### Adicionar créditos
+POST {{api}}/clients/{{client.response.body.id}}/credits
+Content-Type: application/json
+
+{ "amount": 5.5 }
+
+### Extrato
+GET {{api}}/clients/{{client.response.body.id}}/transactions
+
+### Enviar mensagem urgente (com o token)
+# @name message
+POST {{api}}/messages
+Content-Type: application/json
+Authorization: Bearer {{auth.response.body.token}}
+
+{ "recipientId": "dest-1", "recipientName": "Destinatário", "content": "Olá!", "priority": "urgent" }
+
+### Enviar mensagem normal (identificando pelo documento)
+POST {{api}}/messages
+Content-Type: application/json
+X-Client-Document: {{document}}
+
+{ "recipientId": "dest-1", "content": "Sem pressa" }
+
+### Status e histórico da mensagem
+GET {{api}}/messages/{{message.response.body.id}}/status
+X-Client-Document: {{document}}
+
+### Marcar como lida
+PATCH {{api}}/messages/{{message.response.body.id}}/read
+X-Client-Document: {{document}}
+
+### Mensagens (filtros: status, priority, conversationId)
+GET {{api}}/messages?priority=urgent
+X-Client-Document: {{document}}
+
+### Conversas
+GET {{api}}/conversations
+X-Client-Document: {{document}}
+
+### Estado da fila
+GET {{api}}/queue/status
