@@ -11,6 +11,8 @@ docker compose up --build        # API em http://localhost:3000, documentação 
 ./scripts/demo.sh                # em outro terminal: o cenário completo em 15 segundos
 ```
 
+Se a porta 5432 já estiver em uso por um PostgreSQL local: `DB_PORT=5433 docker compose up --build`.
+
 Sem Docker (tudo em memória, nada para instalar além do Node 22):
 
 ```bash
@@ -100,7 +102,7 @@ docker compose up -d db && npm run test:pg   # a mesma suíte + contrato dos rep
 npm run verify                         # lint, build e cobertura: rode antes de qualquer commit
 ```
 
-314 testes com PostgreSQL (139 unitários e de arquitetura, 175 ponta a ponta e de contrato); 99% de linhas e 88% de ramos.
+359 testes com PostgreSQL (152 unitários e de arquitetura, 207 ponta a ponta e de contrato); 99% de linhas e 87% de ramos.
 
 - **Sem `jest.mock`, `jest.fn` ou `spyOn`.** Os testes sobem a aplicação real e falam HTTP. O único dublê é o [`FakeMessageGateway`](test/support/fake-message-gateway.ts), no lugar do provedor externo que o desafio não fornece.
 - **A mesma suíte roda em memória e em PostgreSQL.** Os [testes de contrato](test/repositories) aplicam as mesmas expectativas aos dois adaptadores de cada repositório, inclusive concorrência.
@@ -110,7 +112,7 @@ npm run verify                         # lint, build e cobertura: rode antes de 
 
 ## Configuração
 
-Todas as variáveis são opcionais ([`.env.example`](.env.example)).
+Todas as variáveis são opcionais e lidas do ambiente do processo (o `docker-compose.yml` define as do contêiner; [`.env.example`](.env.example) lista todas). Valor inválido interrompe a inicialização com uma mensagem que nomeia a variável.
 
 | Variável | Padrão | Efeito |
 |---|---|---|
@@ -127,7 +129,10 @@ Todas as variáveis são opcionais ([`.env.example`](.env.example)).
 - **A fila vive na memória de um processo.** O estado das mensagens está no banco, e a fila é reconstruída na inicialização, mas duas instâncias da API teriam duas filas. Escalar horizontalmente pede um broker; o caminho está em [`docs/architecture.md`](docs/architecture.md) e no ADR-008.
 - **Entrega at-least-once.** Uma mensagem pega em `processing` por uma queda é reprocessada ao reiniciar.
 - **Autenticação identifica, não protege.** Token opaco em memória ou documento no cabeçalho, como pede o enunciado; as rotas de `/clients` são abertas. Não é um desenho para produção (ADR-009).
-- **O limite do pós-pago reinicia na virada do mês em UTC.**
+- **Sem idempotência no envio.** Repetir o mesmo `POST /messages` (por timeout do cliente, por exemplo) cobra e envia duas vezes; a correção é uma `Idempotency-Key`. O estorno, esse sim, é idempotente por mensagem.
+- **Sem paginação.** As listagens devolvem tudo; para o volume do desafio basta, em produção pediria cursor.
+- **Cobrança e mensagem não são uma transação só.** São módulos diferentes: se gravar a mensagem falha, o valor é estornado; se o processo cair exatamente entre as duas, sobra um débito sem mensagem, localizável pelo extrato (ADR-006).
+- **O limite do pós-pago reinicia na virada do mês em UTC.** Converter de plano preserva saldo residual e consumo pendente.
 - O que acrescentei ou interpretei em relação ao enunciado está na seção *Differences from the source* da especificação.
 
 ## Como este projeto foi construído

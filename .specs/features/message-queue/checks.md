@@ -48,7 +48,11 @@ Proof: run pg | ✓ get /clients/nao-existe/balance responde 404 CLIENT_NOT_FOUN
 Proof: run pg | ✓ post /clients/nao-existe/credits responde 404 CLIENT_NOT_FOUND
 Proof: run pg | ✓ get /clients/nao-existe/transactions responde 404 CLIENT_NOT_FOUND
 
-**C7** - `PUT /clients/:id` atualiza nome, situação e limite e responde 200; as consultas devolvem o cliente gravado (AC 7)
+**C7** - `PUT /clients/:id` atualiza nome, situação e limite; `planType` converte o plano preservando saldo residual e consumo pendente (AC 7)
+Proof: run pg | ✓ pré → pós com limite: passa a consumir o limite e o saldo residual é preservado
+Proof: run pg | ✓ pré → pós sem limite responde 400 LIMIT_REQUIRED e o cliente continua pré-pago
+Proof: run pg | ✓ pós → pré: o consumo pendente do mês continua registrado
+Proof: run unit | ✓ estorno de mensagem cobrada antes da conversão não se perde
 Proof: run pg | ✓ GET /clients lista na ordem de cadastro e GET /clients/:id devolve um
 Proof: run pg | ✓ PUT /clients/:id atualiza nome, situação e limite, preservando o resto
 
@@ -77,6 +81,7 @@ Proof: run pg | ✓ saldo 10,00 menos cinco mensagens normais fica em 8,75
 
 **C12** - Envio aceito responde 201 no contrato, debita, registra `debit` com o `messageId` e enfileira (AC 12)
 Proof: run pg | ✓ aceita o envio, debita o custo, registra o débito ligado à mensagem e enfileira
+Proof: run pg | ✓ saldo e lançamento são uma operação só: se a cobrança é recusada, não há lançamento
 
 **C13** - Normal custa R$ 0,25, urgente R$ 0,50, e prioridade ausente é normal (AC 13)
 Proof: run pg | ✓ cobra R$ 0,50 pela urgente e R$ 0,25 quando a prioridade não é informada
@@ -85,6 +90,7 @@ Proof: run unit | ✓ custa R$ 0,25 quando normal e R$ 0,50 quando urgente
 **C14** - Saldo menor que o custo responde 402 `INSUFFICIENT_BALANCE` sem débito, mensagem ou fila; saldo igual ao custo é aceito (AC 14)
 Proof: run pg | ✓ um centavo a menos que o custo: 402 INSUFFICIENT_BALANCE, sem débito, mensagem ou fila
 Proof: run pg | ✓ saldo exatamente igual ao custo: aceita e zera
+Proof: run pg | ✓ 402 por saldo insuficiente não cria conversa com o destinatário
 
 **C15** - Pós-pago soma ao consumo, não devolve `currentBalance` e responde 402 `LIMIT_EXCEEDED` acima do limite (AC 15)
 Proof: run pg | ✓ soma o custo ao consumo do mês e não devolve currentBalance
@@ -97,9 +103,11 @@ Proof: run unit | ✓ na virada do mês (UTC) o consumo recomeça do zero
 
 **C17** - Cliente inativo recebe 403 `CLIENT_INACTIVE` sem débito (AC 17)
 Proof: run pg | ✓ cliente inativo recebe 403 CLIENT_INACTIVE
+Proof: run pg | ✓ 403 de cliente inativo não cria conversa com o destinatário
 
 **C18** - Envio inválido responde 400 sem débito; sem conversa e sem destinatário é `RECIPIENT_REQUIRED` (AC 18)
 Proof: run pg | ✓ conteúdo vazio: 400 VALIDATION_FAILED
+Proof: run pg | ✓ conteúdo só com espaços: 400 VALIDATION_FAILED
 Proof: run pg | ✓ prioridade desconhecida: 400 VALIDATION_FAILED
 Proof: run pg | ✓ sem conversa e sem destinatário: 400 RECIPIENT_REQUIRED
 
@@ -149,13 +157,14 @@ Proof: run pg | ✓ com o padrão de três urgentes por rajada, as normais não 
 **C29** - Fila vazia devolve "nada" sem lançar e continua aceitando itens (AC 29)
 Proof: run unit | ✓ vazia devolve undefined e continua aceitando itens
 
-**C30** - Enfileirar e desenfileirar em tempo constante: 200.000 itens em menos de 1,5 s (AC 30)
-Proof: run unit | ✓ 200.000 itens entram e saem em menos de 1,5 s
-Proof: run unit | ✓ enfileira e desenfileira 200.000 itens em tempo linear (O(1) por operação)
+**C30** - Enfileirar e desenfileirar em tempo constante: muito mais rápida do que array com `shift()` na mesma execução (AC 30)
+Proof: run unit | ✓ com 100.000 itens é pelo menos cinco vezes mais rápida do que a mesma fila feita com array e shift()
 
 **C31** - `URGENT_BURST` que não é inteiro maior ou igual a 1 é recusado com `RangeError` (AC 31)
 Proof: run unit | ✓ recusa urgentBurst=0 com RangeError
 Proof: run unit | ✓ recusa urgentBurst=1.5 com RangeError
+Proof: run unit | ✓ recusa URGENT_BURST="0" na inicialização, dizendo qual variável está errada
+Proof: run unit | ✓ recusa QUEUE_MODE="manual": só async e sync são modos de produção
 
 ### S4 - Processamento, falhas e reinício
 
@@ -164,6 +173,7 @@ Proof: run pg | ✓ async: responde "queued" na hora e entrega em segundo plano,
 
 **C33** - Em modo `sync`, o processamento termina antes da resposta (AC 33)
 Proof: run pg | ✓ sync: só responde depois de processar
+Proof: run pg | ✓ uma falha de infraestrutura durante o processamento não derruba a resposta de um envio já cobrado
 
 **C34** - O status só muda pelas transições permitidas, e cada mudança fica no histórico com horário (AC 34)
 Proof: run unit | ✓ percorre queued → processing → sent → delivered → read registrando o horário de cada passo
@@ -178,10 +188,14 @@ Proof: run pg | ✓ com backoff, a nova tentativa espera RETRY_BACKOFF_MS e depo
 **C36** - Falha na última tentativa move para `failed` e estorna com transação `refund` ligada à mensagem (AC 36)
 Proof: run pg | ✓ pré-pago: esgotadas as tentativas, a mensagem vira failed e o valor volta ao saldo
 Proof: run pg | ✓ pós-pago: o estorno abate do consumo do mês
+Proof: run pg | ✓ o estorno da falha definitiva acontece antes de a mensagem ser marcada como failed, e nunca duas vezes
+Proof: run pg | ✓ dois estornos simultâneos da mesma mensagem: só um vale
 
 **C37** - Disparos simultâneos do consumo entregam cada mensagem uma vez, na ordem da fila (AC 37)
 Proof: run pg | ✓ disparos simultâneos entregam cada mensagem uma vez só, uma por vez, na ordem da fila
 Proof: run pg | ✓ mensagens que chegam durante o consumo entram no mesmo laço
+Proof: run pg | ✓ se o banco falha depois de o provedor aceitar, a mensagem não é estornada nem marcada como failed
+Proof: run pg | ✓ se o banco falha depois de o provedor aceitar, o provedor não recebe a mensagem de novo
 
 **C38** - Ao iniciar com PostgreSQL, mensagens `queued` e `processing` voltam à fila na ordem de criação (AC 38)
 Proof: run pg | ✓ as mensagens pendentes voltam à fila na ordem de criação, e a que estava em processamento é reprocessada
@@ -194,12 +208,16 @@ Proof: run pg | ✓ pendentes: só queued e processing, de todos os clientes, na
 Proof: run pg | ✓ GET /queue/status mostra tamanhos por nível antes e contadores depois do processamento
 Proof: run pg | ✓ GET /health responde ok
 
-**C40** - Toda recusa sai no corpo `{ statusCode, code, message, details? }` (AC 40)
-Proof: run pg | ✓ erro de negócio e erro de formato saem no mesmo corpo: statusCode, code, message e details
+**C40** - Toda resposta de erro sai no corpo `{ statusCode, code, message, details? }` (AC 40)
+Proof: run pg | ✓ erro de negócio
+Proof: run pg | ✓ erro de formato, com os campos recusados em details
+Proof: run pg | ✓ rota inexistente
+Proof: run pg | ✓ JSON malformado
 
 **C41** - `/docs` serve a documentação OpenAPI com todas as rotas da seção Surface (AC 41)
 Proof: run pg | ✓ a documentação OpenAPI lista todas as rotas da seção Surface da especificação
 Proof: run pg | ✓ a página /docs é servida
+Proof: run pg | ✓ a documentação descreve o corpo das respostas e os erros de cada rota
 
 **C42** - `scripts/demo.sh` imprime a ordem de entrega `u1 u2 u3 n1 u4 u5 n2` e termina com um 402 `INSUFFICIENT_BALANCE` (AC 42)
 Proof: `bash -c 'out="$(./scripts/demo.sh)" && grep -q "entrega: u1 u2 u3 n1 u4 u5 n2" <<<"$out" && grep -q "HTTP 402" <<<"$out" && grep -q INSUFFICIENT_BALANCE <<<"$out"'`
@@ -219,7 +237,7 @@ Proof: run unit | ✓ o driver pg só aparece em infra/postgres
 | `GET /clients` statuses (1) | 200 C7 | - |
 | `POST /clients` statuses (3) | 201 C1 · 400 C2, C4 · 409 C3 | - |
 | `GET /clients/:id` statuses (2) | 200 C7 · 404 C6 | - |
-| `PUT /clients/:id` statuses (3) | 200 C7 · 400 C4 · 404 C6 | - |
+| `PUT /clients/:id` statuses (3) | 200 C7 · 400 C7 · 404 C6 | - |
 | `GET /clients/:id/balance` statuses (2) | 200 C5 · 404 C6 | - |
 | `POST /clients/:id/credits` statuses (3) | 201 C8 · 400 C8 · 404 C6 | - |
 | `GET /clients/:id/transactions` statuses (2) | 200 C8 · 404 C6 | - |
@@ -234,6 +252,7 @@ Proof: run unit | ✓ o driver pg só aparece em infra/postgres
 | `GET /queue/status` statuses (1) | 200 C39 | - |
 | `GET /health` statuses (1) | 200 C39 | - |
 | Landing 1: tabelas persistidas (4) | `clients_client` C21 · `clients_transaction` C8 · `messaging_conversation` C19 · `messaging_message` C38 | - |
+| Landing 2: origens de erro fora do domínio (4) | formato C40 · rota inexistente C40 · JSON malformado C40 · inesperado C20 | - |
 | Landing 2: categorias de erro (6) | validation C2 · unauthorized C10 · payment_required C14 · forbidden C17 · not_found C6 · conflict C3 | - |
 | Landing 3: `pg` restrito a `infra/postgres` (1) | C43 | - |
 | Transições de status (36) | C34, table-driven over all 36 (`message.spec.ts`, tabela 6 × 6) | - |
@@ -246,8 +265,8 @@ Proof: run unit | ✓ o driver pg só aparece em infra/postgres
 ## Swept
 
 - validation: C2, C4, C18
-- failure modes: C20, C36
-- idempotency: C37 - cada mensagem é entregue uma vez dentro do processo; entre reinícios a garantia é at-least-once (C38, ADR-008)
+- failure modes: C20, C36, C37 - falha ao gravar depois da cobrança, falha definitiva de entrega e falha de persistência depois de o provedor aceitar
+- idempotency: C36, C37 - o estorno é idempotente por mensagem e cada mensagem é entregue uma vez dentro do processo; entre reinícios a garantia é at-least-once (C38, ADR-008)
 - authorization: C10, C22
 - concurrency: C3, C21, C37
 - data lifecycle: C38 - o que foi gravado volta igual depois de reiniciar; sem TTL nem exclusão no escopo
@@ -257,7 +276,7 @@ Proof: run unit | ✓ o driver pg só aparece em infra/postgres
 
 ## Handoff
 
-- **Settled mid-build:** corpo de erro de validação de formato passou a usar o mesmo formato dos erros de negócio, com `code: "VALIDATION_FAILED"` (decorre da porta 2 do Landing)
+- **Settled mid-build:** corpo de erro único para toda falha (porta 2 do Landing); após code review independente: extrato atômico com o saldo, estorno idempotente e anterior ao `failed`, nenhuma gravação antes da cobrança, resumo da conversa derivado das mensagens, conversão de plano (AD-013) e mensagem sem campo de tipo (AD-014), decisões aprovadas pelo autor
 - **Dispatched:** none
 - **Boundary:** C1-C43 fechados no commit que adiciona este arquivo
 - **Abandoned:** front de demonstração, por decisão do autor (AD-012)

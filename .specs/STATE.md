@@ -20,3 +20,5 @@ substitua, e a antiga passa a `superseded by AD-NNN`.
 | AD-010 | Testes com implementações reais, sem bibliotecas de mock | [ADR-010](../docs/adr/010-testes-reais-sem-mocks.md) | active | 2026-11-18 |
 | AD-011 | Extensões do contrato: créditos, histórico financeiro, leitura e health | [plan.md](features/message-queue/plan.md#differences-from-the-source) | active | 2026-11-18 |
 | AD-012 | Sem front: demonstração por Swagger e `scripts/demo.sh` | [plan.md](features/message-queue/plan.md#out-of-scope) | active | 2026-11-18 |
+| AD-013 | Conversão de plano preserva saldo residual e consumo pendente; estorno sem consumo a abater vira crédito | [plan.md](features/message-queue/plan.md#differences-from-the-source) | active | 2026-11-18 |
+| AD-014 | Mensagem sem campo de tipo (SMS/WhatsApp): o contrato segue a entidade do `backend.md` | [plan.md](features/message-queue/plan.md#differences-from-the-source) | active | 2026-11-18 |

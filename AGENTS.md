@@ -32,7 +32,8 @@ API de fila de mensagens com prioridade e cobrança (desafio Big Chat Brasil) em
 - `messaging` importa de `clients` somente por `src/clients/index.ts`.
 - Regra de negócio fica no domínio. Controller recebe, delega e apresenta. Erro de negócio é `DomainError`; só o filtro conhece status HTTP.
 - Dinheiro é `Money` (centavos). Decimal só entra e sai pela borda.
-- Mudança de saldo passa por `ClientRepository.mutate`. Nunca ler o cliente, decidir e gravar em passos separados.
+- Mudança de saldo passa por `ClientRepository.mutate`, junto com o lançamento do extrato. Nunca ler o cliente, decidir e gravar em passos separados.
+- Só a mensagem é gravada depois da cobrança. O que se pode derivar das mensagens (última mensagem, não lidas) é calculado na leitura, não armazenado.
 - Porta nova só quando existir uma segunda implementação real.
 
 ## Regras de teste

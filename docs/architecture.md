@@ -42,7 +42,7 @@ src/
   main.ts            sobe o servidor
   app.setup.ts       configuração global (validação, filtro de erros), usada também pelos testes
   app.module.ts
-  shared/            Money, erros de domínio, Clock, guard, filtro
+  shared/            Money, erros de domínio, Clock, filtro de erros, conexão com o banco
   clients/           quem paga: Client, Document, planos, transações, autenticação
     index.ts         ← API pública do módulo: o único arquivo que `messaging` importa
     domain/  application/  infra/{memory,postgres}/  http/
@@ -79,11 +79,11 @@ sequenceDiagram
 
     C->>H: POST /messages
     H->>U: execute(cliente, dados)
-    U->>R: resolve a conversa (404 se for de outro cliente)
+    U->>R: confere o destino, só leitura (404 se a conversa for de outro cliente)
     U->>S: charge(clienteId, custo, messageId)
-    Note over S: mutate: lê, decide e grava<br/>sob lock da linha do cliente
+    Note over S: mutate: lê, decide e grava saldo e extrato<br/>sob lock da linha do cliente
     S-->>U: cliente debitado (ou 402 / 403)
-    U->>R: grava mensagem (queued) e conversa
+    U->>R: obtém ou cria a conversa e grava a mensagem (queued)
     U->>Q: enqueue(referência, prioridade)
     U->>P: onEnqueued()
     H-->>C: 201 { id, status, cost, currentBalance }
@@ -95,8 +95,8 @@ sequenceDiagram
         P->>R: volta a queued
         P->>Q: reenfileira após o backoff
     else falhou na última tentativa
+        P->>S: refund (idempotente por mensagem)
         P->>R: failed
-        P->>S: refund(clienteId, custo, messageId)
     end
 ```
 

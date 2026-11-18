@@ -25,9 +25,9 @@ Enviar uma mensagem altera dois aggregates de módulos diferentes: o `Client` (s
 
 **Cobrar primeiro, de forma atômica, e compensar em caso de falha.**
 
-1. *Atomicidade do débito*: o caso de uso não lê o saldo. Ele chama `ClientRepository.mutate(id, fn)`, que lê, aplica a função pura `client.charge(cost)` e grava como uma única operação. Em PostgreSQL é uma transação com `SELECT … FOR UPDATE`; em memória é um trecho sem `await` entre ler e gravar.
-2. *Compensação*: se gravar a mensagem ou enfileirar falhar depois da cobrança, o caso de uso estorna o valor (transação `refund`) e propaga o erro.
-3. *Falha definitiva de entrega*: o worker estorna o custo guardado na própria mensagem (ADR-008).
+1. *Atomicidade do débito*: o caso de uso não lê o saldo. Ele chama `ClientRepository.mutate(id, fn, lançamento)`, que lê, aplica a função pura `client.charge(cost)` e grava o novo saldo **e a linha do extrato** como uma única operação. Em PostgreSQL é uma transação com `SELECT … FOR UPDATE`; em memória é um trecho sem `await` entre ler e gravar. Saldo e extrato pertencem ao mesmo módulo, então aqui a transação única é o desenho certo: não existe débito sem lançamento.
+2. *Compensação*: nada é gravado antes da cobrança, e depois dela há uma única gravação que pode falhar, a da mensagem. Se falhar, o caso de uso estorna o valor (transação `refund`) e propaga o erro. Última mensagem e contador de não lidas de uma conversa são derivados das mensagens na leitura, justamente para não existir uma segunda gravação a compensar.
+3. *Falha definitiva de entrega*: o worker estorna o custo guardado na própria mensagem e só depois a marca como `failed` (ADR-008). O estorno é idempotente por mensagem (índice único parcial em `clients_transaction`): se o processo cair entre os dois passos, a mensagem volta à fila no reinício e o valor não é devolvido duas vezes.
 
 Validações que não custam dinheiro (corpo, conversa de outro cliente) acontecem antes da cobrança.
 
@@ -39,7 +39,8 @@ Validações que não custam dinheiro (corpo, conversa de outro cliente) acontec
 ### Consequências negativas
 
 - Se o **processo cair** entre a cobrança e a gravação da mensagem, o cliente fica debitado sem mensagem: a compensação cobre exceções, não quedas. O débito órfão é localizável (transação `debit` cujo `messageId` não existe em `messaging_message`). A correção definitiva é a transação única com outbox.
-- O estorno também pode falhar; nesse caso o erro é registrado em log e a reconciliação acima se aplica.
+- O estorno também pode falhar; nesse caso o erro do estorno é o que chega a quem chamou (resposta `500`, registrada em log pelo filtro de erros) e a reconciliação acima se aplica.
+- A ordem "estornar, depois marcar `failed`" favorece o cliente: uma queda entre os dois passos pode resultar em uma mensagem estornada que acaba entregue na nova tentativa. O inverso deixaria o cliente cobrado por uma mensagem que falhou.
 - Reenvio do mesmo `POST` por timeout do cliente cobra duas vezes: não há chave de idempotência (fora de escopo, registrado).
 
 ## Opções rejeitadas

@@ -25,7 +25,7 @@ O enunciado prefere PostgreSQL e aceita memória para casos simples. São quatro
 
 ## Decisão
 
-**`pg` com SQL direto**, em `src/**/infra/postgres/`, implementando as portas definidas em `application/ports.ts`. Cada repositório tem duas funções de tradução (`toDomain`, `toRow`) e nada mais. O esquema está em `db/migrations/001_init.sql`, aplicado na inicialização por um migrador mínimo que registra o que já rodou em `schema_migrations`.
+**`pg` com SQL direto**, em `src/**/infra/postgres/`, implementando as portas definidas em `application/ports.ts`. Cada repositório tem funções de tradução entre linha e objeto de domínio (`toDomain`/`toRow` em clientes, `toMessage`/`toConversation` em mensagens) e nada mais. O esquema está em `db/migrations/001_init.sql`, aplicado na inicialização por um migrador mínimo que registra o que já rodou em `schema_migrations`.
 
 Ao lado dele existe um **adaptador em memória** para as mesmas portas. A variável `PERSISTENCE` (`memory` por padrão, `postgres` no docker-compose) escolhe o adaptador no módulo, o único lugar que conhece os dois.
 
