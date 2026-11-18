@@ -26,13 +26,17 @@ export interface SendMessageOutput {
   estimatedDelivery: Date;
 }
 
-/** Tempo médio assumido por mensagem, usado só para estimar a entrega. */
+/** Tempo médio assumido por mensagem. Serve só para a estimativa de entrega, que é uma aproximação. */
 const ESTIMATED_MS_PER_MESSAGE = 500;
 
 /**
  * Caso de uso central do desafio. A ordem dos passos é a das regras de negócio:
- * validar → cobrar → registrar → enfileirar. Se algo falhar depois da cobrança,
- * o valor é estornado (compensação), porque não há transação única entre os passos.
+ * validar → cobrar → gravar → enfileirar.
+ *
+ * Nada é gravado antes da cobrança: um envio recusado (402, 403, 404) não deixa
+ * rastro. Depois da cobrança há uma única gravação que pode falhar (a mensagem);
+ * se falhar, o valor é estornado. Cobrança e mensagem pertencem a módulos
+ * diferentes, por isso compensação e não transação única (ADR-006).
  */
 @Injectable()
 export class SendMessageUseCase {
@@ -46,54 +50,64 @@ export class SendMessageUseCase {
   ) {}
 
   async execute(sender: Client, input: SendMessageInput): Promise<SendMessageOutput> {
-    const conversation = await this.resolveConversation(sender, input);
-    const now = this.clock.now();
-    const message = Message.create({
-      id: randomUUID(),
-      conversationId: conversation.id,
-      senderId: sender.id,
-      recipientId: conversation.recipientId,
-      content: input.content,
-      priority: input.priority,
-      now,
-    });
+    const existing = await this.requestedConversation(sender, input);
+    const messageId = randomUUID();
+    const cost = costOf(input.priority);
 
-    const charged = await this.clients.charge(sender.id, costOf(input.priority), message.id);
-    const ahead = this.queue.size;
+    const charged = await this.clients.charge(sender.id, cost, messageId);
+    const estimatedDelivery = this.estimateDelivery(input.priority);
+    let message: Message;
     try {
-      await this.messages.save(message);
-      await this.conversations.save({ ...conversation, lastMessageContent: message.content, lastMessageTime: now });
-      this.queue.enqueue({ messageId: message.id, priority: message.priority, enqueuedAt: now.getTime() }, message.priority);
+      message = await this.record(sender, existing, messageId, input);
+      this.queue.enqueue({ messageId, priority: input.priority, enqueuedAt: message.timestamp.getTime() }, input.priority);
     } catch (error) {
-      await this.clients.refund(sender.id, message.cost, message.id);
+      await this.clients.refund(sender.id, cost, messageId);
       throw error;
     }
     await this.processor.onEnqueued();
 
-    return {
-      message: (await this.messages.findById(message.id)) ?? message,
-      client: charged,
-      estimatedDelivery: new Date(now.getTime() + (ahead + 1) * ESTIMATED_MS_PER_MESSAGE),
-    };
+    return { message: (await this.messages.findById(messageId)) ?? message, client: charged, estimatedDelivery };
   }
 
-  private async resolveConversation(sender: Client, input: SendMessageInput): Promise<Conversation> {
+  /** Só leitura: confere o destino pedido. Devolve a conversa quando o envio a indicou pelo id. */
+  private async requestedConversation(sender: Client, input: SendMessageInput): Promise<Conversation | null> {
     if (input.conversationId) {
       const found = await this.conversations.findById(input.conversationId);
       // Conversa de outro cliente responde 404, não 403: não revelamos que o id existe.
       if (!found || found.clientId !== sender.id) throw new NotFoundError('Conversation', input.conversationId);
       return found;
     }
-    if (!input.recipientId) {
-      throw new ValidationError('RECIPIENT_REQUIRED', 'Informe conversationId ou recipientId');
-    }
-    return this.conversations.getOrCreate({
-      id: randomUUID(),
-      clientId: sender.id,
-      recipientId: input.recipientId,
-      recipientName: input.recipientName ?? input.recipientId,
-      lastMessageContent: null,
-      lastMessageTime: null,
+    if (!input.recipientId) throw new ValidationError('RECIPIENT_REQUIRED', 'Informe conversationId ou recipientId');
+    return null;
+  }
+
+  private async record(sender: Client, existing: Conversation | null, messageId: string, input: SendMessageInput): Promise<Message> {
+    const recipientId = input.recipientId as string; // garantido por requestedConversation quando não há conversa
+    const conversation =
+      existing ??
+      (await this.conversations.getOrCreate({
+        id: randomUUID(),
+        clientId: sender.id,
+        recipientId,
+        recipientName: input.recipientName ?? recipientId,
+      }));
+    const message = Message.create({
+      id: messageId,
+      conversationId: conversation.id,
+      senderId: sender.id,
+      recipientId: conversation.recipientId,
+      content: input.content,
+      priority: input.priority,
+      now: this.clock.now(),
     });
+    await this.messages.save(message);
+    return message;
+  }
+
+  /** Aproximação: quantas mensagens saem antes desta (as do próprio nível; para uma normal, também as urgentes). */
+  private estimateDelivery(priority: Priority): Date {
+    const { urgent, total } = this.queue.snapshot();
+    const ahead = priority === 'urgent' ? urgent : total;
+    return new Date(this.clock.now().getTime() + (ahead + 1) * ESTIMATED_MS_PER_MESSAGE);
   }
 }

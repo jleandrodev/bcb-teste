@@ -79,6 +79,7 @@ describe('Clientes (S1)', () => {
       ['saldo negativo', { balance: -1 }],
       ['limite negativo', { limit: -0.01 }],
       ['saldo com três casas decimais', { balance: 1.005 }],
+      ['saldo acima do teto aceito', { balance: 1e17 }],
       ['nome vazio', { name: '' }],
     ])('recusa corpo inválido (%s) com 400 e não cria o cliente', async (_caso, override) => {
       const response = await t.api
@@ -137,6 +138,42 @@ describe('Clientes (S1)', () => {
     });
   });
 
+  describe('conversão de plano', () => {
+    it('pré → pós com limite: passa a consumir o limite e o saldo residual é preservado', async () => {
+      const ana = await createPrepaid(t, 3);
+
+      const response = await t.api.put(`/clients/${ana.id}`).send({ planType: 'postpaid', limit: 10 });
+      await sendTo(t, ana, 'já no pós-pago', 'urgent');
+
+      expect(response.status).toBe(200);
+      expect(response.body).toMatchObject({ planType: 'postpaid', limit: 10 });
+      expect(await balanceOf(t, ana)).toMatchObject({ planType: 'postpaid', limit: 10, used: 0.5, available: 9.5 });
+
+      const back = await t.api.put(`/clients/${ana.id}`).send({ planType: 'prepaid' });
+      expect(back.body).toMatchObject({ planType: 'prepaid', balance: 3 }); // o saldo residual voltou a valer
+    });
+
+    it('pré → pós sem limite responde 400 LIMIT_REQUIRED e o cliente continua pré-pago', async () => {
+      const ana = await createPrepaid(t, 3);
+
+      const response = await t.api.put(`/clients/${ana.id}`).send({ planType: 'postpaid' });
+
+      expect(response.status).toBe(400);
+      expect(response.body).toMatchObject({ statusCode: 400, code: 'LIMIT_REQUIRED' });
+      expect((await t.api.get(`/clients/${ana.id}`)).body).toMatchObject({ planType: 'prepaid', balance: 3 });
+    });
+
+    it('pós → pré: o consumo pendente do mês continua registrado', async () => {
+      const loja = await createPostpaid(t, 10);
+      await sendTo(t, loja, 'consumo', 'urgent');
+
+      await t.api.put(`/clients/${loja.id}`).send({ planType: 'prepaid' });
+      await t.api.put(`/clients/${loja.id}`).send({ planType: 'postpaid' });
+
+      expect(await balanceOf(t, loja)).toMatchObject({ used: 0.5, available: 9.5 });
+    });
+  });
+
   describe('saldo, limite e créditos', () => {
     it('saldo do pré-pago: balance e available em reais', async () => {
       const ana = await createPrepaid(t, 10);
@@ -164,7 +201,16 @@ describe('Clientes (S1)', () => {
       expect(await transactionsOf(t, ana)).toEqual([expect.objectContaining({ type: 'credit', amount: 5.5 })]);
     });
 
-    it.each([[0], [-5], [0.001], ['10']])('recusa crédito de %p com 400 e mantém o saldo', async (amount) => {
+    it('reduzir o limite abaixo do consumo mostra o consumo real e nada disponível', async () => {
+      const loja = await createPostpaid(t, 5);
+      for (let i = 0; i < 4; i += 1) await sendTo(t, loja, `m${i}`, 'urgent');
+
+      await t.api.put(`/clients/${loja.id}`).send({ limit: 1 });
+
+      expect(await balanceOf(t, loja)).toMatchObject({ limit: 1, used: 2, available: 0 });
+    });
+
+    it.each([[0], [-5], [0.001], ['10'], [1e17]])('recusa crédito de %p com 400 e mantém o saldo', async (amount) => {
       const ana = await createPrepaid(t, 10);
 
       const response = await t.api.post(`/clients/${ana.id}/credits`).send({ amount });

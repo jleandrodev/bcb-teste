@@ -14,7 +14,13 @@ import { CNPJ, CPF } from '../support/fixtures';
  * como o de produção nas regras que importam. O PostgreSQL entra com `npm run test:pg`.
  */
 const adapters: [string, (db: Database) => { clients: ClientRepository; transactions: TransactionRepository }][] = [
-  ['memória', () => ({ clients: new InMemoryClientRepository(), transactions: new InMemoryTransactionRepository() })],
+  [
+    'memória',
+    () => {
+      const transactions = new InMemoryTransactionRepository();
+      return { clients: new InMemoryClientRepository(transactions), transactions };
+    },
+  ],
 ];
 if (usingPostgres) {
   adapters.push([
@@ -37,7 +43,7 @@ function prepaid(id: string, documentId: string, balanceCents: number): Client {
   });
 }
 
-describe.each(adapters)('ClientRepository e TransactionRepository (%s)', (_name, create) => {
+describe.each(adapters)('ClientRepository e extrato (%s)', (_name, create) => {
   const db = new Database();
   let clients: ClientRepository;
   let transactions: TransactionRepository;
@@ -157,7 +163,7 @@ describe.each(adapters)('ClientRepository e TransactionRepository (%s)', (_name,
     });
   });
 
-  describe('transações', () => {
+  describe('extrato', () => {
     const entry = (id: string, clientId: string, type: Transaction['type'], amountCents: number, messageId?: string): Transaction => ({
       id,
       clientId,
@@ -166,24 +172,74 @@ describe.each(adapters)('ClientRepository e TransactionRepository (%s)', (_name,
       messageId,
       createdAt: now,
     });
+    const credit = (client: Client) => client.addCredits(cents(100));
 
-    it('lista as transações do cliente na ordem em que foram registradas', async () => {
+    it('lista os lançamentos do cliente na ordem em que foram registrados', async () => {
       await clients.save(prepaid('c-1', CPF.ana, 0));
       await clients.save(prepaid('c-2', CPF.bruno, 0));
-      await transactions.append(entry('t-1', 'c-1', 'credit', 1000));
-      await transactions.append(entry('t-2', 'c-2', 'credit', 500));
-      await transactions.append(entry('t-3', 'c-1', 'debit', 50, 'm-1'));
-      await transactions.append(entry('t-4', 'c-1', 'refund', 50, 'm-1'));
+      await clients.mutate('c-1', credit, entry('t-1', 'c-1', 'credit', 100));
+      await clients.mutate('c-2', credit, entry('t-2', 'c-2', 'credit', 100));
+      await clients.mutate('c-1', (client) => client.charge(cents(50), now), entry('t-3', 'c-1', 'debit', 50, 'm-1'));
+      await clients.mutate('c-1', (client) => client.refund(cents(50), now), entry('t-4', 'c-1', 'refund', 50, 'm-1'));
 
       expect(await transactions.listByClient('c-1')).toEqual([
-        entry('t-1', 'c-1', 'credit', 1000),
+        entry('t-1', 'c-1', 'credit', 100),
         entry('t-3', 'c-1', 'debit', 50, 'm-1'),
         entry('t-4', 'c-1', 'refund', 50, 'm-1'),
       ]);
     });
 
-    it('cliente sem movimentação tem lista vazia', async () => {
+    it('cliente sem movimentação tem extrato vazio; alteração sem lançamento não cria linha', async () => {
+      await clients.save(prepaid('c-1', CPF.ana, 0));
+      await clients.mutate('c-1', (client) => client.update({ name: 'Novo nome' }));
+
       expect(await transactions.listByClient('c-1')).toEqual([]);
+    });
+
+    it('saldo e lançamento são uma operação só: se a cobrança é recusada, não há lançamento', async () => {
+      await clients.save(prepaid('c-1', CPF.ana, 24));
+
+      await expect(
+        clients.mutate('c-1', (client) => client.charge(cents(25), now), entry('t-1', 'c-1', 'debit', 25, 'm-1')),
+      ).rejects.toMatchObject({ code: 'INSUFFICIENT_BALANCE' });
+
+      expect(await transactions.listByClient('c-1')).toEqual([]);
+    });
+
+    it('um segundo estorno da mesma mensagem é recusado e o saldo não muda', async () => {
+      await clients.save(prepaid('c-1', CPF.ana, 50));
+      const refund = (client: Client) => client.refund(cents(50), now);
+      await clients.mutate('c-1', refund, entry('t-1', 'c-1', 'refund', 50, 'm-1'));
+
+      await expect(clients.mutate('c-1', refund, entry('t-2', 'c-1', 'refund', 50, 'm-1'))).rejects.toMatchObject({
+        code: 'REFUND_ALREADY_RECORDED',
+      });
+
+      expect((await clients.findById('c-1'))?.account.balance.cents).toBe(100);
+      expect(await transactions.listByClient('c-1')).toHaveLength(1);
+    });
+
+    it('dois estornos simultâneos da mesma mensagem: só um vale', async () => {
+      await clients.save(prepaid('c-1', CPF.ana, 0));
+      const refund = (client: Client) => client.refund(cents(50), now);
+
+      const results = await Promise.allSettled([
+        clients.mutate('c-1', refund, entry('t-1', 'c-1', 'refund', 50, 'm-1')),
+        clients.mutate('c-1', refund, entry('t-2', 'c-1', 'refund', 50, 'm-1')),
+      ]);
+
+      expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+      expect((await clients.findById('c-1'))?.account.balance.cents).toBe(50);
+    });
+
+    it('estornos de mensagens diferentes, e débitos repetidos da mesma mensagem, não são confundidos', async () => {
+      await clients.save(prepaid('c-1', CPF.ana, 100));
+      await clients.mutate('c-1', (client) => client.refund(cents(50), now), entry('t-1', 'c-1', 'refund', 50, 'm-1'));
+      await clients.mutate('c-1', (client) => client.refund(cents(50), now), entry('t-2', 'c-1', 'refund', 50, 'm-2'));
+      await clients.mutate('c-1', credit, entry('t-3', 'c-1', 'credit', 100));
+      await clients.mutate('c-1', credit, entry('t-4', 'c-1', 'credit', 100));
+
+      expect(await transactions.listByClient('c-1')).toHaveLength(4);
     });
   });
 });

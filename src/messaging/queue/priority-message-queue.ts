@@ -7,7 +7,6 @@ export interface QueueSnapshot {
   normal: number;
   total: number;
   enqueued: number;
-  dequeued: number;
   starvationPreventions: number;
   urgentBurst: number;
 }
@@ -28,7 +27,6 @@ export class PriorityMessageQueue<T> {
   private readonly urgentBurst: number;
   private consecutiveUrgent = 0;
   private enqueued = 0;
-  private dequeued = 0;
   private starvationPreventions = 0;
 
   constructor(options: { urgentBurst?: number } = {}) {
@@ -53,13 +51,11 @@ export class PriorityMessageQueue<T> {
     if (urgentWaiting && !mustServeNormal) {
       // Só conta a rajada quando há normal esperando: sem ninguém para "passar fome", não há o que proteger.
       this.consecutiveUrgent = normalWaiting ? this.consecutiveUrgent + 1 : 0;
-      this.dequeued += 1;
       return this.urgent.dequeue();
     }
 
     if (urgentWaiting) this.starvationPreventions += 1;
     this.consecutiveUrgent = 0;
-    this.dequeued += 1;
     return this.normal.dequeue();
   }
 
@@ -77,7 +73,6 @@ export class PriorityMessageQueue<T> {
       normal: this.normal.size,
       total: this.size,
       enqueued: this.enqueued,
-      dequeued: this.dequeued,
       starvationPreventions: this.starvationPreventions,
       urgentBurst: this.urgentBurst,
     };

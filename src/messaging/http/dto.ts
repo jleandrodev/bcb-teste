@@ -1,4 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Transform } from 'class-transformer';
 import { IsIn, IsNotEmpty, IsOptional, IsString, MaxLength } from 'class-validator';
 
 const PRIORITIES = ['normal', 'urgent'];
@@ -23,7 +24,8 @@ export class SendMessageDto {
   @MaxLength(120)
   recipientName?: string;
 
-  @ApiProperty()
+  @ApiProperty({ description: 'Texto da mensagem. Espaços nas pontas são removidos; só espaços não é conteúdo.' })
+  @Transform(({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value))
   @IsString()
   @IsNotEmpty()
   @MaxLength(1000)

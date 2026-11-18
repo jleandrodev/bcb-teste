@@ -1,4 +1,4 @@
-import { ConversationRepository, MessageFilter, MessageRepository } from '../../application/ports';
+import { ConversationRepository, ConversationSummary, MessageFilter, MessageRepository } from '../../application/ports';
 import { Conversation } from '../../domain/conversation';
 import { Message } from '../../domain/message';
 
@@ -25,6 +25,21 @@ export class InMemoryMessageRepository implements MessageRepository {
   async listPending(): Promise<Message[]> {
     return [...this.byId.values()].filter((m) => m.status === 'queued' || m.status === 'processing');
   }
+
+  async summarize(senderId: string): Promise<ConversationSummary[]> {
+    const summaries = new Map<string, ConversationSummary>();
+    for (const message of this.byId.values()) {
+      if (message.senderId !== senderId) continue;
+      const previous = summaries.get(message.conversationId);
+      summaries.set(message.conversationId, {
+        conversationId: message.conversationId,
+        lastMessageContent: message.content, // a iteração segue a ordem de criação: a última vista é a mais recente
+        lastMessageTime: message.timestamp,
+        unreadCount: (previous?.unreadCount ?? 0) + (message.status === 'delivered' ? 1 : 0),
+      });
+    }
+    return [...summaries.values()];
+  }
 }
 
 export class InMemoryConversationRepository implements ConversationRepository {
@@ -39,17 +54,11 @@ export class InMemoryConversationRepository implements ConversationRepository {
     return candidate;
   }
 
-  async save(conversation: Conversation): Promise<void> {
-    this.byId.set(conversation.id, conversation);
-  }
-
   async findById(id: string): Promise<Conversation | null> {
     return this.byId.get(id) ?? null;
   }
 
   async listByClient(clientId: string): Promise<Conversation[]> {
-    return [...this.byId.values()]
-      .filter((c) => c.clientId === clientId)
-      .sort((a, b) => (b.lastMessageTime?.getTime() ?? 0) - (a.lastMessageTime?.getTime() ?? 0));
+    return [...this.byId.values()].filter((c) => c.clientId === clientId);
   }
 }

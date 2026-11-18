@@ -25,14 +25,15 @@ CREATE TABLE clients_transaction (
   seq          BIGSERIAL
 );
 CREATE INDEX clients_transaction_client_idx ON clients_transaction (client_id, seq);
+-- Uma mensagem é estornada no máximo uma vez, mesmo que o tratamento da falha rode de novo.
+CREATE UNIQUE INDEX clients_transaction_one_refund_per_message ON clients_transaction (message_id) WHERE type = 'refund';
 
 CREATE TABLE messaging_conversation (
   id                   TEXT PRIMARY KEY,
   client_id            TEXT NOT NULL,
   recipient_id         TEXT NOT NULL,
   recipient_name       TEXT NOT NULL,
-  last_message_content TEXT,
-  last_message_time    TIMESTAMPTZ,
+  seq            BIGSERIAL,
   UNIQUE (client_id, recipient_id)
 );
 

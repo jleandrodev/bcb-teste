@@ -23,6 +23,8 @@ export interface BillingPolicy {
   charge(account: Account, cost: Money, now: Date): Account;
   refund(account: Account, cost: Money, now: Date): Account;
   available(account: Account, now: Date): Money;
+  /** Consumo do período corrente (sempre zero no pré-pago). */
+  used(account: Account, now: Date): Money;
 }
 
 export class PrepaidPolicy implements BillingPolicy {
@@ -44,6 +46,10 @@ export class PrepaidPolicy implements BillingPolicy {
 
   available(account: Account): Money {
     return account.balance;
+  }
+
+  used(): Money {
+    return Money.zero();
   }
 }
 
@@ -67,15 +73,29 @@ export class PostpaidPolicy implements BillingPolicy {
     return { ...account, used, usagePeriod: periodOf(now) };
   }
 
+  /**
+   * Abate do consumo do mês. O que não houver para abater (cobrança de um mês já
+   * fechado, ou feita quando o cliente era pré-pago) vira crédito em `balance`:
+   * um estorno nunca desaparece.
+   */
   refund(account: Account, cost: Money, now: Date): Account {
     const used = this.currentUsage(account, now);
-    const refunded = used.gte(cost) ? used.subtract(cost) : Money.zero();
-    return { ...account, used: refunded, usagePeriod: periodOf(now) };
+    const abated = used.gte(cost) ? cost : used;
+    return {
+      ...account,
+      used: used.subtract(abated),
+      balance: account.balance.add(cost.subtract(abated)),
+      usagePeriod: periodOf(now),
+    };
   }
 
   available(account: Account, now: Date): Money {
     const used = this.currentUsage(account, now);
     return account.limit.gte(used) ? account.limit.subtract(used) : Money.zero();
+  }
+
+  used(account: Account, now: Date): Money {
+    return this.currentUsage(account, now);
   }
 }
 

@@ -1,18 +1,49 @@
 import { LinkedQueue } from '../linked-queue';
 
+function drain<T>(queue: LinkedQueue<T>): T[] {
+  const out: T[] = [];
+  while (!queue.isEmpty()) out.push(queue.dequeue() as T);
+  return out;
+}
+
+interface Fifo {
+  enqueue(value: number): void;
+  dequeue(): number | undefined;
+}
+
+/** A alternativa ingênua: array com shift(), que reindexa todos os elementos a cada remoção. */
+class ArrayShiftQueue implements Fifo {
+  private readonly items: number[] = [];
+
+  enqueue(value: number): void {
+    this.items.push(value);
+  }
+
+  dequeue(): number | undefined {
+    return this.items.shift();
+  }
+}
+
+/** Tempo, em ms, para enfileirar e depois desenfileirar `n` itens. */
+function timeToCycle(queue: Fifo, n: number): number {
+  const started = performance.now();
+  for (let i = 0; i < n; i += 1) queue.enqueue(i);
+  for (let i = 0; i < n; i += 1) queue.dequeue();
+  return performance.now() - started;
+}
+
 describe('LinkedQueue', () => {
   it('entrega na ordem de chegada (FIFO)', () => {
     const queue = new LinkedQueue<string>();
     ['a', 'b', 'c'].forEach((item) => queue.enqueue(item));
 
-    expect([queue.dequeue(), queue.dequeue(), queue.dequeue()]).toEqual(['a', 'b', 'c']);
+    expect(drain(queue)).toEqual(['a', 'b', 'c']);
   });
 
   it('vazia devolve undefined em vez de lançar, e continua utilizável', () => {
     const queue = new LinkedQueue<number>();
 
     expect(queue.dequeue()).toBeUndefined();
-    expect(queue.peek()).toBeUndefined();
     expect(queue.isEmpty()).toBe(true);
 
     queue.enqueue(1);
@@ -27,17 +58,8 @@ describe('LinkedQueue', () => {
     queue.enqueue(2);
     queue.enqueue(3);
 
-    expect(queue.toArray()).toEqual([2, 3]);
     expect(queue.size).toBe(2);
-  });
-
-  it('peek mostra o próximo sem remover', () => {
-    const queue = new LinkedQueue<string>();
-    queue.enqueue('primeiro');
-    queue.enqueue('segundo');
-
-    expect(queue.peek()).toBe('primeiro');
-    expect(queue.size).toBe(2);
+    expect([queue.dequeue(), queue.dequeue(), queue.dequeue()]).toEqual([2, 3, undefined]);
   });
 
   it('size acompanha entradas e saídas intercaladas', () => {
@@ -48,21 +70,18 @@ describe('LinkedQueue', () => {
     queue.enqueue(3);
 
     expect(queue.size).toBe(2);
-    expect(queue.toArray()).toEqual([2, 3]);
+    expect(drain(queue)).toEqual([2, 3]);
+    expect(queue.size).toBe(0);
   });
 
-  it('enfileira e desenfileira 200.000 itens em tempo linear (O(1) por operação)', () => {
-    const queue = new LinkedQueue<number>();
-    const total = 200_000;
-    const started = performance.now();
+  it('com 100.000 itens é pelo menos cinco vezes mais rápida do que a mesma fila feita com array e shift()', () => {
+    const items = 100_000;
 
-    for (let i = 0; i < total; i += 1) queue.enqueue(i);
-    let sum = 0;
-    for (let i = 0; i < total; i += 1) sum += queue.dequeue() as number;
+    const linked = timeToCycle(new LinkedQueue<number>(), items);
+    const shifting = timeToCycle(new ArrayShiftQueue(), items);
 
-    // Com array + shift() este laço é quadrático e leva vários segundos; o teto tem folga de sobra para máquinas lentas.
-    expect(performance.now() - started).toBeLessThan(1500);
-    expect(sum).toBe((total * (total - 1)) / 2);
-    expect(queue.isEmpty()).toBe(true);
+    // Comparação na mesma máquina e na mesma execução: não depende de um tempo absoluto.
+    // O(1) por operação contra O(n): na prática a diferença passa de cem vezes.
+    expect(linked * 5).toBeLessThan(shifting);
   });
 });

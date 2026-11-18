@@ -15,6 +15,7 @@ describe('Envio com cobrança (S2)', () => {
     expect((await balanceOf(t, client)).available).toBe(available);
     expect(await transactionsOf(t, client)).toEqual([]);
     expect((await get(t, client, '/messages')).body).toEqual([]);
+    expect((await get(t, client, '/conversations')).body).toEqual([]);
     expect((await t.api.get('/queue/status')).body).toMatchObject({ size: { total: 0 }, enqueued: 0 });
   }
 
@@ -144,6 +145,7 @@ describe('Envio com cobrança (S2)', () => {
 
     it.each([
       ['conteúdo vazio', 'VALIDATION_FAILED', { recipientId: 'd', content: '' }],
+      ['conteúdo só com espaços', 'VALIDATION_FAILED', { recipientId: 'd', content: '   ' }],
       ['conteúdo ausente', 'VALIDATION_FAILED', { recipientId: 'd' }],
       ['conteúdo acima de 1000 caracteres', 'VALIDATION_FAILED', { recipientId: 'd', content: 'x'.repeat(1001) }],
       ['prioridade desconhecida', 'VALIDATION_FAILED', { recipientId: 'd', content: 'oi', priority: 'altíssima' }],
@@ -157,6 +159,16 @@ describe('Envio com cobrança (S2)', () => {
       expect(response.status).toBe(400);
       expect(response.body).toMatchObject({ statusCode: 400, code });
       await expectNoSideEffects(ana, 5);
+    });
+  });
+
+  describe('conteúdo', () => {
+    it('espaços nas pontas do conteúdo são removidos antes de gravar', async () => {
+      const ana = await createPrepaid(t, 5);
+
+      const sent = (await send(t, ana, { recipientId: 'dest-1', content: '  Olá, mundo  ' })).body as SendJson;
+
+      expect((await get(t, ana, `/messages/${sent.id}`)).body).toMatchObject({ content: 'Olá, mundo' });
     });
   });
 

@@ -50,7 +50,7 @@ describe('Money', () => {
   });
 
   it('compara por valor', () => {
-    expect(Money.fromCents(50).equals(Money.fromDecimal(0.5))).toBe(true);
+    expect(Money.fromCents(50).cents).toBe(Money.fromDecimal(0.5).cents);
     expect(Money.fromCents(50).gte(Money.fromCents(50))).toBe(true);
     expect(Money.fromCents(49).gte(Money.fromCents(50))).toBe(false);
     expect(Money.zero().cents).toBe(0);

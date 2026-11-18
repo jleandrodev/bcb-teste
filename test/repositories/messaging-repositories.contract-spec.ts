@@ -20,7 +20,7 @@ const t0 = new Date('2026-03-10T12:00:00.000Z');
 const later = (seconds: number) => new Date(t0.getTime() + seconds * 1000);
 
 function conversation(id: string, clientId: string, recipientId: string): Conversation {
-  return { id, clientId, recipientId, recipientName: `Nome de ${recipientId}`, lastMessageContent: null, lastMessageTime: null };
+  return { id, clientId, recipientId, recipientName: `Nome de ${recipientId}` };
 }
 
 describe.each(adapters)('MessageRepository e ConversationRepository (%s)', (_name, create) => {
@@ -41,14 +41,14 @@ describe.each(adapters)('MessageRepository e ConversationRepository (%s)', (_nam
 
   function message(
     id: string,
-    overrides: { conversationId?: string; senderId?: string; priority?: 'normal' | 'urgent'; now?: Date } = {},
+    overrides: { conversationId?: string; senderId?: string; priority?: 'normal' | 'urgent'; now?: Date; content?: string } = {},
   ): Message {
     return Message.create({
       id,
       conversationId: overrides.conversationId ?? 'cv-1',
       senderId: overrides.senderId ?? 'c-1',
       recipientId: 'r-1',
-      content: `conteúdo de ${id}`,
+      content: overrides.content ?? `conteúdo de ${id}`,
       priority: overrides.priority ?? 'normal',
       now: overrides.now ?? t0,
     });
@@ -133,6 +133,53 @@ describe.each(adapters)('MessageRepository e ConversationRepository (%s)', (_nam
     });
   });
 
+  describe('resumo das conversas (derivado das mensagens)', () => {
+    it('traz a última mensagem e as não lidas de cada conversa, em uma consulta', async () => {
+      await messages.save(message('m-1', { content: 'primeira', now: later(1) }));
+      await messages.save(message('m-2', { content: 'segunda', now: later(2) }));
+      await messages.save(message('m-3', { conversationId: 'cv-2', content: 'outra conversa', now: later(3) }));
+
+      const byConversation = new Map((await messages.summarize('c-1')).map((s) => [s.conversationId, s]));
+
+      expect(byConversation).toEqual(
+        new Map([
+          ['cv-1', { conversationId: 'cv-1', lastMessageContent: 'segunda', lastMessageTime: later(2), unreadCount: 0 }],
+          ['cv-2', { conversationId: 'cv-2', lastMessageContent: 'outra conversa', lastMessageTime: later(3), unreadCount: 0 }],
+        ]),
+      );
+    });
+
+    it('não lidas conta só as entregues: na fila, enviada, lida e falha ficam de fora', async () => {
+      const delivered = (id: string) =>
+        message(id).transitionTo('processing', later(1)).transitionTo('sent', later(2)).transitionTo('delivered', later(3));
+      await messages.save(delivered('m-1'));
+      await messages.save(delivered('m-2'));
+      await messages.save(delivered('m-3').transitionTo('read', later(4)));
+      await messages.save(message('m-4'));
+      await messages.save(message('m-5').transitionTo('processing', later(1)).transitionTo('failed', later(2)));
+      await messages.save(message('m-6').transitionTo('processing', later(1)).transitionTo('sent', later(2)));
+
+      const [summary] = await messages.summarize('c-1');
+
+      expect(summary).toMatchObject({ conversationId: 'cv-1', unreadCount: 2, lastMessageContent: 'conteúdo de m-6' });
+    });
+
+    it('atualizar o status de uma mensagem antiga não a torna a "última"', async () => {
+      await messages.save(message('m-1', { content: 'antiga' }));
+      await messages.save(message('m-2', { content: 'recente' }));
+      await messages.save(message('m-1', { content: 'antiga' }).transitionTo('processing', later(9)));
+
+      expect((await messages.summarize('c-1'))[0].lastMessageContent).toBe('recente');
+    });
+
+    it('não mistura clientes, e conversa sem mensagem não aparece no resumo', async () => {
+      await messages.save(message('m-1', { senderId: 'c-2', conversationId: 'cv-3' }));
+
+      expect(await messages.summarize('c-1')).toEqual([]);
+      expect(await messages.summarize('c-2')).toHaveLength(1);
+    });
+  });
+
   describe('conversas', () => {
     it('getOrCreate devolve a conversa existente do par cliente e destinatário, ignorando a candidata', async () => {
       const found = await conversations.getOrCreate({ ...conversation('cv-outra', 'c-1', 'r-1'), recipientName: 'Outro nome' });
@@ -154,22 +201,10 @@ describe.each(adapters)('MessageRepository e ConversationRepository (%s)', (_nam
       expect((await conversations.listByClient('c-2')).map((c) => c.id)).toEqual(['cv-3']);
     });
 
-    it('save atualiza a última mensagem', async () => {
-      await conversations.save({ ...conversation('cv-1', 'c-1', 'r-1'), lastMessageContent: 'Olá', lastMessageTime: later(5) });
-
-      expect(await conversations.findById('cv-1')).toEqual({
-        ...conversation('cv-1', 'c-1', 'r-1'),
-        lastMessageContent: 'Olá',
-        lastMessageTime: later(5),
-      });
-    });
-
-    it('lista as conversas do cliente da mais recente para a mais antiga; sem mensagem fica por último', async () => {
+    it('lista as conversas do cliente na ordem em que foram criadas', async () => {
       await conversations.getOrCreate(conversation('cv-4', 'c-1', 'r-4'));
-      await conversations.save({ ...conversation('cv-1', 'c-1', 'r-1'), lastMessageContent: 'antiga', lastMessageTime: later(1) });
-      await conversations.save({ ...conversation('cv-2', 'c-1', 'r-2'), lastMessageContent: 'recente', lastMessageTime: later(9) });
 
-      expect((await conversations.listByClient('c-1')).map((c) => c.id)).toEqual(['cv-2', 'cv-1', 'cv-4']);
+      expect((await conversations.listByClient('c-1')).map((c) => c.id)).toEqual(['cv-1', 'cv-2', 'cv-4']);
     });
 
     it('devolve null para conversa desconhecida', async () => {

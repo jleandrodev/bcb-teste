@@ -34,8 +34,9 @@ describe('PrepaidPolicy', () => {
     expect(policy.refund(account({ balance: cents(50) }), cents(50)).balance.cents).toBe(100);
   });
 
-  it('o disponível é o próprio saldo', () => {
+  it('o disponível é o próprio saldo, e não há consumo a informar', () => {
     expect(policy.available(account({ balance: cents(875) })).cents).toBe(875);
+    expect(policy.used().cents).toBe(0);
   });
 });
 
@@ -79,11 +80,26 @@ describe('PostpaidPolicy', () => {
     expect(refunded.used.cents).toBe(25);
   });
 
-  it('estorno de cobrança do mês anterior não gera consumo negativo no mês novo', () => {
+  it('estorno de cobrança de um mês já fechado não some: vira crédito, sem gerar consumo negativo', () => {
     const refunded = policy.refund(account({ limit: cents(100), used: cents(75) }), cents(50), february);
 
     expect(refunded.used.cents).toBe(0);
+    expect(refunded.balance.cents).toBe(50);
     expect(refunded.usagePeriod).toBe('2026-02');
+  });
+
+  it('estorno maior que o consumo do mês abate o que há e credita o restante', () => {
+    const refunded = policy.refund(account({ limit: cents(100), used: cents(25) }), cents(50), january);
+
+    expect(refunded.used.cents).toBe(0);
+    expect(refunded.balance.cents).toBe(25);
+  });
+
+  it('informa o consumo do mês corrente, zerado depois da virada', () => {
+    const consumed = account({ limit: cents(100), used: cents(75) });
+
+    expect(policy.used(consumed, january).cents).toBe(75);
+    expect(policy.used(consumed, february).cents).toBe(0);
   });
 
   it('o disponível nunca é negativo, mesmo se o limite for reduzido abaixo do consumo', () => {

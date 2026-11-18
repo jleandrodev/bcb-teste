@@ -56,14 +56,18 @@ describe('Fila com prioridade pela API (S3)', () => {
     expect((after.body as { averageWaitMs: number }).averageWaitMs).toBeGreaterThanOrEqual(0);
   });
 
-  it('a estimativa de entrega cresce com o número de mensagens à frente', async () => {
+  it('a estimativa de entrega segue a prioridade: a urgente não espera as normais que estão na fila', async () => {
     t = await startApp();
     const ana = await createPrepaid(t, 100);
+    const estimate = async (label: string, priority: 'normal' | 'urgent') =>
+      new Date(((await sendTo(t, ana, label, priority)).body as { estimatedDelivery: string }).estimatedDelivery).getTime();
 
-    const first = (await sendTo(t, ana, 'n1')).body as { estimatedDelivery: string };
-    await sendTo(t, ana, 'n2');
-    const third = (await sendTo(t, ana, 'n3')).body as { estimatedDelivery: string };
+    const first = await estimate('n1', 'normal');
+    await estimate('n2', 'normal');
+    const third = await estimate('n3', 'normal');
+    const urgent = await estimate('u1', 'urgent');
 
-    expect(new Date(third.estimatedDelivery).getTime()).toBeGreaterThan(new Date(first.estimatedDelivery).getTime());
+    expect(third).toBeGreaterThan(first); // cada normal espera as que chegaram antes
+    expect(urgent).toBeLessThan(third); // a urgente passa na frente das três normais
   });
 });

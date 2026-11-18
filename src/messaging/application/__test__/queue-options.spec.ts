@@ -17,18 +17,23 @@ describe('queueOptionsFromEnv', () => {
     expect(options).toEqual({ mode: 'sync', urgentBurst: 5, maxAttempts: 2, retryBackoffMs: 0, processingDelayMs: 40 });
   });
 
-  it('valor inválido não derruba a aplicação: volta ao padrão', () => {
-    const options = queueOptionsFromEnv({ QUEUE_MODE: 'turbo', URGENT_BURST: 'abc', MAX_ATTEMPTS: '-4' });
-
-    expect(options.mode).toBe('async');
-    expect(options.urgentBurst).toBe(3);
-    expect(options.maxAttempts).toBe(3);
+  it('variável vazia vale como ausente', () => {
+    expect(queueOptionsFromEnv({ QUEUE_MODE: '', URGENT_BURST: '' })).toMatchObject({ mode: 'async', urgentBurst: 3 });
   });
 
-  it('rajada e tentativas nunca ficam abaixo de 1', () => {
-    const options = queueOptionsFromEnv({ URGENT_BURST: '0', MAX_ATTEMPTS: '0' });
+  it.each([
+    ['URGENT_BURST', '0'],
+    ['URGENT_BURST', '2.5'],
+    ['URGENT_BURST', 'abc'],
+    ['MAX_ATTEMPTS', '0'],
+    ['MAX_ATTEMPTS', '-4'],
+    ['RETRY_BACKOFF_MS', '-1'],
+    ['PROCESSING_DELAY_MS', 'rápido'],
+  ])('recusa %s=%p na inicialização, dizendo qual variável está errada', (name, value) => {
+    expect(() => queueOptionsFromEnv({ [name]: value })).toThrow(name);
+  });
 
-    expect(options.urgentBurst).toBe(1);
-    expect(options.maxAttempts).toBe(1);
+  it.each([['turbo'], ['manual']])('recusa QUEUE_MODE=%p: só async e sync são modos de produção', (mode) => {
+    expect(() => queueOptionsFromEnv({ QUEUE_MODE: mode })).toThrow('QUEUE_MODE');
   });
 });

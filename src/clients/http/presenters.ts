@@ -20,8 +20,13 @@ export function presentBalance(client: Client, now: Date) {
   if (client.planType === 'prepaid') {
     return { clientId: client.id, planType: client.planType, balance: client.account.balance.toDecimal(), available };
   }
-  const limit = client.account.limit.toDecimal();
-  return { clientId: client.id, planType: client.planType, limit, used: Number((limit - available).toFixed(2)), available };
+  return {
+    clientId: client.id,
+    planType: client.planType,
+    limit: client.account.limit.toDecimal(),
+    used: client.used(now).toDecimal(),
+    available,
+  };
 }
 
 export function presentTransaction(t: Transaction) {

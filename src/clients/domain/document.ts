@@ -47,8 +47,4 @@ export class Document {
   static normalize(raw: string): string {
     return onlyDigits(String(raw ?? ''));
   }
-
-  equals(other: Document): boolean {
-    return this.type === other.type && this.value === other.value;
-  }
 }

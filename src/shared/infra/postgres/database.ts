@@ -23,7 +23,10 @@ export class Database implements OnModuleInit, OnModuleDestroy {
   }
 
   async onModuleInit(): Promise<void> {
-    if (this.pool) await this.migrate();
+    if (!this.pool) return;
+    // Sem este handler, a queda de uma conexão ociosa derrubaria o processo.
+    this.pool.on('error', (error) => this.logger.error(`conexão ociosa com o PostgreSQL falhou: ${error.message}`));
+    await this.migrate();
   }
 
   async onModuleDestroy(): Promise<void> {

@@ -1,3 +1,4 @@
+import type { PoolClient } from 'pg';
 import { ConflictError, NotFoundError } from '../../../shared/domain/errors';
 import { Money } from '../../../shared/domain/money';
 import { Database } from '../../../shared/infra/postgres/database';
@@ -95,16 +96,34 @@ export class PostgresClientRepository implements ClientRepository {
   /**
    * Lê, decide e grava dentro de uma transação, com a linha do cliente travada
    * (FOR UPDATE). Um segundo envio simultâneo espera o COMMIT e então lê o saldo
-   * já debitado. Se `fn` lançar (saldo insuficiente), a transação é desfeita.
+   * já debitado. O lançamento do extrato entra na mesma transação: se `change`
+   * lançar (saldo insuficiente) ou o lançamento for recusado, tudo é desfeito.
    */
-  async mutate(id: string, fn: (client: Client) => Client): Promise<Client> {
+  async mutate(id: string, change: (client: Client) => Client, entry?: Transaction): Promise<Client> {
     return this.db.transaction(async (tx) => {
       const found = await tx.query<ClientRow>('SELECT * FROM clients_client WHERE id = $1 FOR UPDATE', [id]);
       if (!found.rows[0]) throw new NotFoundError('Client', id);
-      const next = fn(toDomain(found.rows[0]));
+      const next = change(toDomain(found.rows[0]));
       await tx.query(UPDATE_CLIENT, toRow(next));
+      if (entry) await insertEntry(tx, entry);
       return next;
     });
+  }
+}
+
+async function insertEntry(tx: PoolClient, entry: Transaction): Promise<void> {
+  try {
+    await tx.query(
+      `INSERT INTO clients_transaction (id, client_id, type, amount_cents, message_id, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [entry.id, entry.clientId, entry.type, entry.amountCents, entry.messageId ?? null, entry.createdAt],
+    );
+  } catch (error) {
+    // O índice único parcial permite um só estorno por mensagem.
+    if ((error as { code?: string }).code === UNIQUE_VIOLATION) {
+      throw new ConflictError('REFUND_ALREADY_RECORDED', 'Esta mensagem já foi estornada');
+    }
+    throw error;
   }
 }
 
@@ -119,21 +138,6 @@ interface TransactionRow {
 
 export class PostgresTransactionRepository implements TransactionRepository {
   constructor(private readonly db: Database) {}
-
-  async append(transaction: Transaction): Promise<void> {
-    await this.db.query(
-      `INSERT INTO clients_transaction (id, client_id, type, amount_cents, message_id, created_at)
-       VALUES ($1, $2, $3, $4, $5, $6)`,
-      [
-        transaction.id,
-        transaction.clientId,
-        transaction.type,
-        transaction.amountCents,
-        transaction.messageId ?? null,
-        transaction.createdAt,
-      ],
-    );
-  }
 
   async listByClient(clientId: string): Promise<Transaction[]> {
     const rows = await this.db.query<TransactionRow>('SELECT * FROM clients_transaction WHERE client_id = $1 ORDER BY seq', [clientId]);

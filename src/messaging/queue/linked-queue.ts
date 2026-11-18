@@ -33,21 +33,11 @@ export class LinkedQueue<T> {
     return node.value;
   }
 
-  peek(): T | undefined {
-    return this.head?.value;
-  }
-
   get size(): number {
     return this.length;
   }
 
   isEmpty(): boolean {
     return this.length === 0;
-  }
-
-  toArray(): T[] {
-    const out: T[] = [];
-    for (let node = this.head; node; node = node.next) out.push(node.value);
-    return out;
   }
 }

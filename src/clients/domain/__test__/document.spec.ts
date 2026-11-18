@@ -29,11 +29,8 @@ describe('Document', () => {
     expect(() => Document.create(type, raw)).toThrow(expect.objectContaining({ code: 'INVALID_DOCUMENT', kind: 'validation' }));
   });
 
-  it('dois documentos são iguais quando tipo e dígitos coincidem, não importa a máscara', () => {
-    const masked = Document.create('CPF', '529.982.247-25');
-
-    expect(masked.equals(Document.create('CPF', '52998224725'))).toBe(true);
-    expect(masked.equals(Document.create('CPF', '11144477735'))).toBe(false);
+  it('a mesma pessoa escrita com e sem máscara resulta no mesmo valor', () => {
+    expect(Document.create('CPF', '529.982.247-25').value).toBe(Document.create('CPF', '52998224725').value);
   });
 
   it('normaliza um documento vindo de cabeçalho sem exigir o tipo', () => {

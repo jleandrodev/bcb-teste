@@ -1,6 +1,6 @@
 import { Money } from '../../../shared/domain/money';
 import { Database } from '../../../shared/infra/postgres/database';
-import { ConversationRepository, MessageFilter, MessageRepository } from '../../application/ports';
+import { ConversationRepository, ConversationSummary, MessageFilter, MessageRepository } from '../../application/ports';
 import { Conversation } from '../../domain/conversation';
 import { Message, MessageStatus } from '../../domain/message';
 import type { Priority } from '../../queue/priority-message-queue';
@@ -83,6 +83,25 @@ export class PostgresMessageRepository implements MessageRepository {
     const rows = await this.db.query<MessageRow>(`SELECT * FROM messaging_message WHERE status IN ('queued', 'processing') ORDER BY seq`);
     return rows.map(toMessage);
   }
+
+  /** Uma consulta para todas as conversas: DISTINCT ON fica com a mensagem mais recente de cada uma. */
+  async summarize(senderId: string): Promise<ConversationSummary[]> {
+    const rows = await this.db.query<{ conversation_id: string; content: string; created_at: Date; unread: string }>(
+      `SELECT DISTINCT ON (conversation_id)
+              conversation_id, content, created_at,
+              count(*) FILTER (WHERE status = 'delivered') OVER (PARTITION BY conversation_id) AS unread
+         FROM messaging_message
+        WHERE sender_id = $1
+        ORDER BY conversation_id, seq DESC`,
+      [senderId],
+    );
+    return rows.map((row) => ({
+      conversationId: row.conversation_id,
+      lastMessageContent: row.content,
+      lastMessageTime: row.created_at,
+      unreadCount: Number(row.unread),
+    }));
+  }
 }
 
 interface ConversationRow {
@@ -90,19 +109,10 @@ interface ConversationRow {
   client_id: string;
   recipient_id: string;
   recipient_name: string;
-  last_message_content: string | null;
-  last_message_time: Date | null;
 }
 
 function toConversation(row: ConversationRow): Conversation {
-  return {
-    id: row.id,
-    clientId: row.client_id,
-    recipientId: row.recipient_id,
-    recipientName: row.recipient_name,
-    lastMessageContent: row.last_message_content,
-    lastMessageTime: row.last_message_time,
-  };
+  return { id: row.id, clientId: row.client_id, recipientId: row.recipient_id, recipientName: row.recipient_name };
 }
 
 export class PostgresConversationRepository implements ConversationRepository {
@@ -126,23 +136,13 @@ export class PostgresConversationRepository implements ConversationRepository {
     return toConversation(rows[0]);
   }
 
-  async save(conversation: Conversation): Promise<void> {
-    await this.db.query(
-      'UPDATE messaging_conversation SET recipient_name = $2, last_message_content = $3, last_message_time = $4 WHERE id = $1',
-      [conversation.id, conversation.recipientName, conversation.lastMessageContent, conversation.lastMessageTime],
-    );
-  }
-
   async findById(id: string): Promise<Conversation | null> {
     const rows = await this.db.query<ConversationRow>('SELECT * FROM messaging_conversation WHERE id = $1', [id]);
     return rows[0] ? toConversation(rows[0]) : null;
   }
 
   async listByClient(clientId: string): Promise<Conversation[]> {
-    const rows = await this.db.query<ConversationRow>(
-      'SELECT * FROM messaging_conversation WHERE client_id = $1 ORDER BY last_message_time DESC NULLS LAST',
-      [clientId],
-    );
+    const rows = await this.db.query<ConversationRow>('SELECT * FROM messaging_conversation WHERE client_id = $1 ORDER BY seq', [clientId]);
     return rows.map(toConversation);
   }
 }

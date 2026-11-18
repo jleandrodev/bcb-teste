@@ -93,9 +93,56 @@ describe('Client', () => {
     expect(raised.account.limit.cents).toBe(9000);
   });
 
-  it('trocar de plano muda a regra de cobrança aplicada', () => {
-    const migrated = prepaid(0).update({ planType: 'postpaid', limit: cents(100) });
+  describe('conversão de plano', () => {
+    it('pré → pós: passa a consumir o limite e o saldo residual fica guardado', () => {
+      const converted = prepaid(300)
+        .update({ limit: cents(100) })
+        .changePlan('postpaid');
 
-    expect(migrated.charge(cents(50), now).account.used.cents).toBe(50);
+      const charged = converted.charge(cents(50), now);
+
+      expect(charged.used(now).cents).toBe(50);
+      expect(charged.account.balance.cents).toBe(300);
+    });
+
+    it('pós → pré: passa a consumir o saldo e o consumo pendente do mês fica registrado', () => {
+      const withUsage = postpaid(100).charge(cents(75), now).addCredits(cents(200));
+
+      const converted = withUsage.changePlan('prepaid');
+
+      expect(converted.charge(cents(50), now).account.balance.cents).toBe(150);
+      expect(converted.account.used.cents).toBe(75);
+    });
+
+    it('ida e volta não perde nada: o saldo residual volta a valer', () => {
+      const back = prepaid(300)
+        .update({ limit: cents(100) })
+        .changePlan('postpaid')
+        .changePlan('prepaid');
+
+      expect(back.available(now).cents).toBe(300);
+    });
+
+    it('converter para pós-pago sem limite definido é recusado com LIMIT_REQUIRED', () => {
+      expect(() => prepaid(300).changePlan('postpaid')).toThrow(expect.objectContaining({ code: 'LIMIT_REQUIRED', kind: 'validation' }));
+    });
+
+    it('estorno de mensagem cobrada antes da conversão não se perde', () => {
+      // Cobrada como pré-paga (saldo 100 → 50); o cliente vira pós-pago; a entrega falha.
+      const converted = prepaid(100)
+        .charge(cents(50), now)
+        .update({ limit: cents(500) })
+        .changePlan('postpaid');
+
+      const refunded = converted.refund(cents(50), now);
+
+      expect(refunded.account.balance.cents).toBe(100);
+      expect(refunded.used(now).cents).toBe(0);
+    });
+  });
+
+  it('o consumo do pré-pago é sempre zero; o do pós-pago acompanha as cobranças', () => {
+    expect(prepaid(100).charge(cents(25), now).used(now).cents).toBe(0);
+    expect(postpaid(100).charge(cents(25), now).used(now).cents).toBe(25);
   });
 });

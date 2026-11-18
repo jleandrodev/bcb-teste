@@ -43,10 +43,6 @@ export class Money {
     return this.cents >= other.cents;
   }
 
-  equals(other: Money): boolean {
-    return this.cents === other.cents;
-  }
-
   /** Só para a borda (JSON). Nunca faça contas com o resultado. */
   toDecimal(): number {
     return this.cents / 100;

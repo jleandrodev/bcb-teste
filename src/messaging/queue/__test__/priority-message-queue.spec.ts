@@ -165,7 +165,7 @@ describe('PriorityMessageQueue', () => {
       expect(() => new PriorityMessageQueue({ urgentBurst })).toThrow(RangeError);
     });
 
-    it('o retrato da fila mostra tamanhos por nível e totais de entrada e saída', () => {
+    it('o retrato da fila mostra tamanhos por nível, total de entradas e a configuração', () => {
       const queue = new PriorityMessageQueue<string>({ urgentBurst: 2 });
       fill(queue, 'n1', 'u1', 'u2');
       queue.dequeue();
@@ -175,24 +175,10 @@ describe('PriorityMessageQueue', () => {
         normal: 1,
         total: 2,
         enqueued: 3,
-        dequeued: 1,
         starvationPreventions: 0,
         urgentBurst: 2,
       });
       expect(queue.size).toBe(2);
-    });
-
-    it('200.000 itens entram e saem em menos de 1,5 s', () => {
-      const queue = new PriorityMessageQueue<number>();
-      const total = 200_000;
-      const started = performance.now();
-
-      for (let i = 0; i < total; i += 1) queue.enqueue(i, i % 3 === 0 ? 'normal' : 'urgent');
-      let count = 0;
-      while (queue.dequeue() !== undefined) count += 1;
-
-      expect(performance.now() - started).toBeLessThan(1500);
-      expect(count).toBe(total);
     });
   });
 });

@@ -1,4 +1,4 @@
-import { InactiveClientError } from '../../shared/domain/errors';
+import { InactiveClientError, ValidationError } from '../../shared/domain/errors';
 import { Money } from '../../shared/domain/money';
 import { Account, PlanType, periodOf, policyFor } from './billing/billing-policy';
 import { Document } from './document';
@@ -79,12 +79,27 @@ export class Client {
     return this.with({ account: { ...this.account, balance: this.account.balance.add(amount) } });
   }
 
-  update(changes: { name?: string; active?: boolean; limit?: Money; planType?: PlanType }): Client {
+  used(now: Date): Money {
+    return policyFor(this.planType).used(this.account, now);
+  }
+
+  update(changes: { name?: string; active?: boolean; limit?: Money }): Client {
     return this.with({
       name: changes.name ?? this.name,
       active: changes.active ?? this.active,
-      planType: changes.planType ?? this.planType,
       account: changes.limit ? { ...this.account, limit: changes.limit } : this.account,
     });
+  }
+
+  /**
+   * Converte o plano sem destruir nada: o saldo residual do pré-pago e o consumo
+   * pendente do pós-pago continuam na conta e voltam a valer se o cliente
+   * reconverter. Só muda a regra de cobrança aplicada daqui em diante.
+   */
+  changePlan(planType: PlanType): Client {
+    if (planType === 'postpaid' && this.account.limit.cents === 0) {
+      throw new ValidationError('LIMIT_REQUIRED', 'Informe o limite mensal para converter o cliente para pós-pago');
+    }
+    return this.with({ planType });
   }
 }
