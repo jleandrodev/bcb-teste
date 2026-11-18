@@ -95,6 +95,13 @@ describe('Operação (S5)', () => {
       expect(response.body).toEqual({ statusCode: 404, code: 'NOT_FOUND', message: expect.any(String) });
     });
 
+    it('corpo maior que o aceito pelo servidor', async () => {
+      const response = await t.api.post('/clients').send({ name: 'x'.repeat(200_000) });
+
+      expect(response.status).toBe(413);
+      expect(response.body).toEqual({ statusCode: 413, code: 'PAYLOAD_TOO_LARGE', message: expect.any(String) });
+    });
+
     it('JSON malformado', async () => {
       const response = await t.api.post('/clients').set('Content-Type', 'application/json').send('{ "name": ');
 

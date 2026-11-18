@@ -102,7 +102,7 @@ docker compose up -d db && npm run test:pg   # a mesma suíte + contrato dos rep
 npm run verify                         # lint, build e cobertura: rode antes de qualquer commit
 ```
 
-359 testes com PostgreSQL (152 unitários e de arquitetura, 207 ponta a ponta e de contrato); 99% de linhas e 87% de ramos.
+366 testes com PostgreSQL (152 unitários e de arquitetura, 214 ponta a ponta e de contrato); 99% de linhas e 87% de ramos.
 
 - **Sem `jest.mock`, `jest.fn` ou `spyOn`.** Os testes sobem a aplicação real e falam HTTP. O único dublê é o [`FakeMessageGateway`](test/support/fake-message-gateway.ts), no lugar do provedor externo que o desafio não fornece.
 - **A mesma suíte roda em memória e em PostgreSQL.** Os [testes de contrato](test/repositories) aplicam as mesmas expectativas aos dois adaptadores de cada repositório, inclusive concorrência.

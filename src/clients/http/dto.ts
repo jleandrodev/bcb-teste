@@ -1,8 +1,11 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsBoolean, IsIn, IsNotEmpty, IsNumber, IsOptional, IsPositive, IsString, Max, MaxLength, Min } from 'class-validator';
+import { Trim } from '../../shared/http/trim';
 
 const DOCUMENT_TYPES = ['CPF', 'CNPJ'];
 const PLAN_TYPES = ['prepaid', 'postpaid'];
+/** Um CNPJ com máscara tem 18 caracteres; a folga cobre espaços digitados a mais. */
+const DOCUMENT_MAX_LENGTH = 32;
 /** Teto de qualquer valor em reais aceito pela API: muito acima do uso real e seguro para a aritmética em centavos. */
 const MAX_AMOUNT = 1_000_000_000;
 
@@ -10,6 +13,7 @@ export class AuthDto {
   @ApiProperty({ example: '52998224725' })
   @IsString()
   @IsNotEmpty()
+  @MaxLength(DOCUMENT_MAX_LENGTH)
   documentId!: string;
 
   @ApiProperty({ enum: DOCUMENT_TYPES })
@@ -19,6 +23,7 @@ export class AuthDto {
 
 export class CreateClientDto {
   @ApiProperty()
+  @Trim()
   @IsString()
   @IsNotEmpty()
   @MaxLength(120)
@@ -27,6 +32,7 @@ export class CreateClientDto {
   @ApiProperty({ example: '52998224725' })
   @IsString()
   @IsNotEmpty()
+  @MaxLength(DOCUMENT_MAX_LENGTH)
   documentId!: string;
 
   @ApiProperty({ enum: DOCUMENT_TYPES })
@@ -55,6 +61,7 @@ export class CreateClientDto {
 export class UpdateClientDto {
   @ApiPropertyOptional()
   @IsOptional()
+  @Trim()
   @IsString()
   @IsNotEmpty()
   @MaxLength(120)

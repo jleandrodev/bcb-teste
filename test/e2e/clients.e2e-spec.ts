@@ -81,6 +81,8 @@ describe('Clientes (S1)', () => {
       ['saldo com três casas decimais', { balance: 1.005 }],
       ['saldo acima do teto aceito', { balance: 1e17 }],
       ['nome vazio', { name: '' }],
+      ['nome só com espaços', { name: '   ' }],
+      ['documento maior que qualquer CPF ou CNPJ', { documentId: '5'.repeat(500) }],
     ])('recusa corpo inválido (%s) com 400 e não cria o cliente', async (_caso, override) => {
       const response = await t.api
         .post('/clients')
@@ -113,6 +115,16 @@ describe('Clientes (S1)', () => {
       expect(response.status).toBe(200);
       expect(response.body).toEqual({ ...loja, name: 'Loja Sul', active: false, limit: 80 });
       expect((await t.api.get(`/clients/${loja.id}`)).body).toEqual(response.body);
+    });
+
+    it('espaços nas pontas do nome são removidos; PUT com nome só de espaços responde 400', async () => {
+      const created = await t.api.post('/clients').send({ name: '  Ana  ', documentId: CPF.ana, documentType: 'CPF', planType: 'prepaid' });
+
+      const blank = await t.api.put(`/clients/${created.body.id}`).send({ name: '   ' });
+
+      expect(created.body).toMatchObject({ name: 'Ana' });
+      expect(blank.status).toBe(400);
+      expect((await t.api.get(`/clients/${created.body.id}`)).body).toMatchObject({ name: 'Ana' });
     });
 
     it('PUT com campo desconhecido responde 400', async () => {

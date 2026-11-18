@@ -150,6 +150,9 @@ describe('Envio com cobrança (S2)', () => {
       ['conteúdo acima de 1000 caracteres', 'VALIDATION_FAILED', { recipientId: 'd', content: 'x'.repeat(1001) }],
       ['prioridade desconhecida', 'VALIDATION_FAILED', { recipientId: 'd', content: 'oi', priority: 'altíssima' }],
       ['campo não declarado', 'VALIDATION_FAILED', { recipientId: 'd', content: 'oi', cost: 0 }],
+      ['destinatário com mais de 120 caracteres', 'VALIDATION_FAILED', { recipientId: 'r'.repeat(121), content: 'oi' }],
+      ['destinatário só com espaços', 'VALIDATION_FAILED', { recipientId: '   ', content: 'oi' }],
+      ['nome do destinatário só com espaços', 'VALIDATION_FAILED', { recipientId: 'd', recipientName: '   ', content: 'oi' }],
       ['sem conversa e sem destinatário', 'RECIPIENT_REQUIRED', { content: 'oi' }],
     ])('%s: 400 %s', async (_caso, code, body) => {
       const ana = await createPrepaid(t, 5);

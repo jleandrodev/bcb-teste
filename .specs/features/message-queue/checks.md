@@ -36,6 +36,7 @@ Proof: run pg | ✓ recusa corpo inválido (planType desconhecido) com 400 e nã
 Proof: run pg | ✓ recusa corpo inválido (documentType desconhecido) com 400 e não cria o cliente
 Proof: run pg | ✓ recusa corpo inválido (saldo negativo) com 400 e não cria o cliente
 Proof: run pg | ✓ recusa corpo inválido (limite negativo) com 400 e não cria o cliente
+Proof: run pg | ✓ recusa corpo inválido (nome só com espaços) com 400 e não cria o cliente
 
 **C5** - `GET /clients/:id/balance` devolve saldo (pré-pago) ou limite, consumo e disponível (pós-pago), em reais (AC 5)
 Proof: run pg | ✓ saldo do pré-pago: balance e available em reais
@@ -108,6 +109,7 @@ Proof: run pg | ✓ 403 de cliente inativo não cria conversa com o destinatári
 **C18** - Envio inválido responde 400 sem débito; sem conversa e sem destinatário é `RECIPIENT_REQUIRED` (AC 18)
 Proof: run pg | ✓ conteúdo vazio: 400 VALIDATION_FAILED
 Proof: run pg | ✓ conteúdo só com espaços: 400 VALIDATION_FAILED
+Proof: run pg | ✓ destinatário com mais de 120 caracteres: 400 VALIDATION_FAILED
 Proof: run pg | ✓ prioridade desconhecida: 400 VALIDATION_FAILED
 Proof: run pg | ✓ sem conversa e sem destinatário: 400 RECIPIENT_REQUIRED
 
@@ -213,6 +215,7 @@ Proof: run pg | ✓ erro de negócio
 Proof: run pg | ✓ erro de formato, com os campos recusados em details
 Proof: run pg | ✓ rota inexistente
 Proof: run pg | ✓ JSON malformado
+Proof: run pg | ✓ corpo maior que o aceito pelo servidor
 
 **C41** - `/docs` serve a documentação OpenAPI com todas as rotas da seção Surface (AC 41)
 Proof: run pg | ✓ a documentação OpenAPI lista todas as rotas da seção Surface da especificação
@@ -252,7 +255,7 @@ Proof: run unit | ✓ o driver pg só aparece em infra/postgres
 | `GET /queue/status` statuses (1) | 200 C39 | - |
 | `GET /health` statuses (1) | 200 C39 | - |
 | Landing 1: tabelas persistidas (4) | `clients_client` C21 · `clients_transaction` C8 · `messaging_conversation` C19 · `messaging_message` C38 | - |
-| Landing 2: origens de erro fora do domínio (4) | formato C40 · rota inexistente C40 · JSON malformado C40 · inesperado C20 | - |
+| Landing 2: origens de erro fora do domínio (5) | formato C40 · rota inexistente C40 · JSON malformado C40 · corpo grande demais C40 · inesperado C20 | - |
 | Landing 2: categorias de erro (6) | validation C2 · unauthorized C10 · payment_required C14 · forbidden C17 · not_found C6 · conflict C3 | - |
 | Landing 3: `pg` restrito a `infra/postgres` (1) | C43 | - |
 | Transições de status (36) | C34, table-driven over all 36 (`message.spec.ts`, tabela 6 × 6) | - |

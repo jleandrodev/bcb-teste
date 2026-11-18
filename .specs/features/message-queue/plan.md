@@ -124,6 +124,7 @@ Uma empresa é cadastrada com documento válido, consulta saldo ou limite e se i
    - `52998224724` → 400; `11111111111` → 400; um CPF válido enviado como `CNPJ` → 400
 3. IF já existe cliente com o mesmo documento THEN the system SHALL responder `409` com `code: "DOCUMENT_ALREADY_REGISTERED"`
 4. IF o corpo traz campo não declarado, `planType` fora de `prepaid|postpaid`, `documentType` fora de `CPF|CNPJ` ou `balance`/`limit` negativo THEN the system SHALL responder `400` sem criar cliente
+   - `name` só com espaços → `400`; espaços nas pontas do nome são removidos; `documentId` com mais de 32 caracteres → `400`
 5. WHEN `GET /clients/:id/balance` é chamado THEN the system SHALL responder `200` com `{ planType, balance, available }` para pré-pago e `{ planType, limit, used, available }` para pós-pago, em reais
    - pós-pago com limite 50,00 e consumo 42,50 → `available: 7.5`
 6. IF `:id` não existe em `GET /clients/:id`, `PUT /clients/:id`, `/balance`, `/credits` ou `/transactions` THEN the system SHALL responder `404` com `code: "CLIENT_NOT_FOUND"`
@@ -158,6 +159,7 @@ Uma mensagem só entra na fila depois de paga, e ninguém vê o que é de outro 
 17. IF o cliente está inativo THEN the system SHALL responder `403` com `code: "CLIENT_INACTIVE"` ao enviar, sem debitar e sem criar conversa
 18. IF `content` está vazio ou só tem espaços, `priority` não é `normal|urgent`, ou faltam `conversationId` e `recipientId` THEN the system SHALL responder `400` sem debitar
     - sem conversa e sem destinatário → `code: "RECIPIENT_REQUIRED"`
+    - `recipientId`, `recipientName` ou `conversationId` com mais de 120 caracteres, ou só com espaços → `400`
 19. WHEN o envio traz `recipientId` sem `conversationId` THEN the system SHALL usar a conversa existente daquele cliente com o destinatário ou criar uma; IF `conversationId` pertence a outro cliente THEN the system SHALL responder `404` sem debitar
 20. IF gravar a mensagem ou enfileirar falha depois da cobrança THEN the system SHALL estornar o custo com uma transação `refund`, responder `500` com `code: "INTERNAL_ERROR"` e não deixar mensagem pendente
     - mecanismo: compensação em `SendMessageUseCase.execute`; a mensagem é a única gravação depois da cobrança
@@ -218,7 +220,7 @@ Quem opera enxerga a fila, e quem avalia vê o sistema funcionando sem ler códi
 
 39. WHEN `GET /queue/status` é chamado THEN the system SHALL responder `200` com `size { urgent, normal, total }`, `enqueued`, `processed`, `failed`, `retried`, `averageWaitMs`, `antiStarvation { urgentBurst, preventions }` e `worker { mode, running }`
 40. IF a requisição é recusada ou falha, por qualquer motivo, THEN the system SHALL responder com o corpo `{ statusCode, code, message, details? }`
-    - regra de negócio → `code` do domínio; formato inválido → `VALIDATION_FAILED`; rota inexistente → `NOT_FOUND`; JSON malformado → `BAD_REQUEST`; erro inesperado → `INTERNAL_ERROR`, sem detalhe interno
+    - regra de negócio → `code` do domínio; formato inválido → `VALIDATION_FAILED`; rota inexistente → `NOT_FOUND`; JSON malformado → `BAD_REQUEST`; corpo acima de 100 KB → `413` `PAYLOAD_TOO_LARGE`; erro inesperado → `INTERNAL_ERROR`, sem detalhe interno
 41. WHEN `GET /docs` é aberto THEN the system SHALL mostrar a documentação OpenAPI com todas as rotas da seção Surface, o corpo de cada resposta e os status de erro de cada rota
 42. WHEN `scripts/demo.sh` é executado contra a API no ar THEN o script SHALL criar um cliente, enviar duas mensagens normais e cinco urgentes, imprimir a ordem de entrega `u1 u2 u3 n1 u4 u5 n2`, e terminar mostrando um envio recusado com `402` e `code: "INSUFFICIENT_BALANCE"`
 
