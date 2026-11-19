@@ -33,12 +33,14 @@ export class ErrorFilter implements ExceptionFilter {
   }
 
   /**
-   * Erros 4xx que não nascem no domínio: os do Nest (rota inexistente) e os do
+   * Erros que não nascem no domínio mas têm status próprio: os lançados como
+   * `HttpException` (rota inexistente, 503 da checagem de saúde) e os 4xx do
    * leitor de corpo do Express (JSON malformado, corpo grande demais), que
-   * carregam o status em `status`. Um 5xx vindo daí é tratado como inesperado.
+   * carregam o status em `status`. Qualquer outro é inesperado.
    */
-  private clientErrorStatus(error: unknown): number | null {
-    const status = error instanceof HttpException ? error.getStatus() : (error as { status?: unknown } | null)?.status;
+  private httpStatus(error: unknown): number | null {
+    if (error instanceof HttpException) return error.getStatus();
+    const status = (error as { status?: unknown } | null)?.status;
     return error instanceof Error && typeof status === 'number' && status >= 400 && status < 500 ? status : null;
   }
 
@@ -46,9 +48,9 @@ export class ErrorFilter implements ExceptionFilter {
     if (error instanceof DomainError) {
       return { statusCode: STATUS_BY_KIND[error.kind], code: error.code, message: error.message, details: error.details };
     }
-    const clientError = this.clientErrorStatus(error);
-    if (clientError) {
-      return { statusCode: clientError, code: HttpStatus[clientError] ?? 'HTTP_ERROR', message: (error as Error).message };
+    const status = this.httpStatus(error);
+    if (status) {
+      return { statusCode: status, code: HttpStatus[status] ?? 'HTTP_ERROR', message: (error as Error).message };
     }
     // Erro que ninguém previu: o detalhe vai para o log, nunca para o cliente da API.
     this.logger.error(error instanceof Error ? (error.stack ?? error.message) : String(error));

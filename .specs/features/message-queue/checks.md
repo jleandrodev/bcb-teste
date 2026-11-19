@@ -208,7 +208,6 @@ Proof: run pg | ✓ pendentes: só queued e processing, de todos os clientes, na
 
 **C39** - `GET /queue/status` devolve tamanhos por nível, contadores, anti-starvation e estado do worker (AC 39)
 Proof: run pg | ✓ GET /queue/status mostra tamanhos por nível antes e contadores depois do processamento
-Proof: run pg | ✓ GET /health responde ok
 
 **C40** - Toda resposta de erro sai no corpo `{ statusCode, code, message, details? }` (AC 40)
 Proof: run pg | ✓ erro de negócio
@@ -232,6 +231,11 @@ Proof: run unit | ✓ domínio e fila não importam framework, driver de banco n
 Proof: run unit | ✓ messaging só enxerga clients pela API pública (src/clients/index.ts)
 Proof: run unit | ✓ o driver pg só aparece em infra/postgres
 
+**C44** - `GET /health` responde 200 com a persistência em uso, e 503 `SERVICE_UNAVAILABLE` enquanto o PostgreSQL está fora do ar (AC 43)
+Proof: run pg | ✓ responde 200 e diz qual persistência está em uso
+Proof: run pg | ✓ responde 503 SERVICE_UNAVAILABLE enquanto o banco está fora do ar e volta a 200 quando ele retorna
+Proof: run pg | ✓ a documentação declara o 200 e o 503
+
 ## Coverage
 
 | Set (size) | Member -> proof | Unproven |
@@ -253,7 +257,7 @@ Proof: run unit | ✓ o driver pg só aparece em infra/postgres
 | `GET /messages/:id/status` statuses (3) | 200 C34 · 401 C10 · 404 C22 | - |
 | `PATCH /messages/:id/read` statuses (4) | 200 C25 · 401 C10 · 404 C22 · 409 C25 | - |
 | `GET /queue/status` statuses (1) | 200 C39 | - |
-| `GET /health` statuses (1) | 200 C39 | - |
+| `GET /health` statuses (2) | 200 C44 · 503 C44 | - |
 | Landing 1: tabelas persistidas (4) | `clients_client` C21 · `clients_transaction` C8 · `messaging_conversation` C19 · `messaging_message` C38 | - |
 | Landing 2: origens de erro fora do domínio (5) | formato C40 · rota inexistente C40 · JSON malformado C40 · corpo grande demais C40 · inesperado C20 | - |
 | Landing 2: categorias de erro (6) | validation C2 · unauthorized C10 · payment_required C14 · forbidden C17 · not_found C6 · conflict C3 | - |
@@ -273,14 +277,14 @@ Proof: run unit | ✓ o driver pg só aparece em infra/postgres
 - authorization: C10, C22
 - concurrency: C3, C21, C37
 - data lifecycle: C38 - o que foi gravado volta igual depois de reiniciar; sem TTL nem exclusão no escopo
-- dependency failure: C35, C36
+- dependency failure: C35, C36, C44
 - state transitions: C34, C25
-- observability: C39
+- observability: C39, C44
 
 ## Handoff
 
 - **Settled mid-build:** corpo de erro único para toda falha (porta 2 do Landing); após code review independente: extrato atômico com o saldo, estorno idempotente e anterior ao `failed`, nenhuma gravação antes da cobrança, resumo da conversa derivado das mensagens, conversão de plano (AD-013) e mensagem sem campo de tipo (AD-014), decisões aprovadas pelo autor
 - **Dispatched:** none
-- **Boundary:** C1-C43 fechados no commit que adiciona este arquivo
+- **Boundary:** C1-C44 fechados no commit que adiciona este arquivo
 - **Abandoned:** front de demonstração, por decisão do autor (AD-012)
 - **Walked:** `scripts/demo.sh` executado contra a API com PostgreSQL: ordem `u1 u2 u3 n1 u4 u5 n2`, 402 ao final

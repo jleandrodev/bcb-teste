@@ -45,7 +45,7 @@ Para explorar à mão: Swagger em [`/docs`](http://localhost:3000/docs) ou o arq
 |---|---|---|
 | 1. Clientes, mensagens e cobrança | cadastro com validação de CPF/CNPJ, saldo e limite, envio que só entra na fila depois de pago, R$ 0,25 normal e R$ 0,50 urgente, 402 sem saldo | [`src/clients/domain`](src/clients/domain), [`send-message.use-case.ts`](src/messaging/application/send-message.use-case.ts) |
 | 2. Autenticação e fila com prioridade | `POST /auth` e identificação por documento; fila de dois níveis, FIFO em cada nível, com limite de urgentes seguidas | [`src/messaging/queue`](src/messaging/queue) |
-| 3. Processamento assíncrono | worker em segundo plano, estados `queued → processing → sent → delivered → read`, retry com backoff exponencial, `failed` com estorno, `GET /queue/status` | [`message-processor.ts`](src/messaging/application/message-processor.ts) |
+| 3. Processamento assíncrono | worker em segundo plano, estados `queued → processing → sent → delivered → read`, retry com backoff exponencial, `failed` com estorno, `GET /queue/status`, `GET /health` que responde 503 se o banco cai | [`message-processor.ts`](src/messaging/application/message-processor.ts) |
 | Diferenciais | PostgreSQL, Docker, OpenAPI, testes (99% de linhas), CI, fila reconstruída ao reiniciar, débito seguro sob concorrência | abaixo |
 
 As 18 rotas estão na seção *Surface* da [especificação](.specs/features/message-queue/plan.md).
@@ -102,7 +102,7 @@ docker compose up -d db && npm run test:pg   # a mesma suíte + contrato dos rep
 npm run verify                         # lint, build e cobertura: rode antes de qualquer commit
 ```
 
-366 testes com PostgreSQL (152 unitários e de arquitetura, 214 ponta a ponta e de contrato); 99% de linhas e 87% de ramos.
+368 testes com PostgreSQL (152 unitários e de arquitetura, 216 ponta a ponta e de contrato); 99% de linhas e 87% de ramos.
 
 - **Sem `jest.mock`, `jest.fn` ou `spyOn`.** Os testes sobem a aplicação real e falam HTTP. O único dublê é o [`FakeMessageGateway`](test/support/fake-message-gateway.ts), no lugar do provedor externo que o desafio não fornece.
 - **A mesma suíte roda em memória e em PostgreSQL.** Os [testes de contrato](test/repositories) aplicam as mesmas expectativas aos dois adaptadores de cada repositório, inclusive concorrência.
@@ -137,4 +137,4 @@ Todas as variáveis são opcionais e lidas do ambiente do processo (o `docker-co
 
 ## Como este projeto foi construído
 
-Especificação antes do código: [`plan.md`](.specs/features/message-queue/plan.md) traz o problema, 42 critérios de aceitação com valores concretos e as decisões difíceis de reverter; os ADRs registram o porquê de cada escolha; [`checks.md`](.specs/features/message-queue/checks.md) liga cada critério ao teste que o prova. Usei assistência de IA (Claude Code) na implementação, com essas especificações como contrato e a suíte de testes como verificação; as decisões e a revisão são minhas. [`AGENTS.md`](AGENTS.md) descreve as regras que valem para qualquer pessoa ou agente que mexa neste repositório.
+Especificação antes do código: [`plan.md`](.specs/features/message-queue/plan.md) traz o problema, 43 critérios de aceitação com valores concretos e as decisões difíceis de reverter; os ADRs registram o porquê de cada escolha; [`checks.md`](.specs/features/message-queue/checks.md) liga cada critério ao teste que o prova. Usei assistência de IA (Claude Code) na implementação, com essas especificações como contrato e a suíte de testes como verificação; as decisões e a revisão são minhas. [`AGENTS.md`](AGENTS.md) descreve as regras que valem para qualquer pessoa ou agente que mexa neste repositório.

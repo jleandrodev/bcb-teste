@@ -1,4 +1,5 @@
 import { TestApp, startApp } from '../support/app';
+import { describePostgres, usingPostgres, withDatabaseOffline } from '../support/database';
 
 describe('Operação (S5)', () => {
   let t: TestApp;
@@ -9,11 +10,31 @@ describe('Operação (S5)', () => {
 
   afterAll(() => t.close());
 
-  it('GET /health responde ok', async () => {
-    const response = await t.api.get('/health');
+  describe('GET /health', () => {
+    it('responde 200 e diz qual persistência está em uso', async () => {
+      const response = await t.api.get('/health');
 
-    expect(response.status).toBe(200);
-    expect(response.body).toEqual({ status: 'ok' });
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual({ status: 'ok', persistence: usingPostgres ? 'postgres' : 'memory' });
+    });
+
+    describePostgres('com PostgreSQL', () => {
+      it('responde 503 SERVICE_UNAVAILABLE enquanto o banco está fora do ar e volta a 200 quando ele retorna', async () => {
+        const during = await withDatabaseOffline(() => t.api.get('/health'));
+        const after = await t.api.get('/health');
+
+        expect(during.status).toBe(503);
+        expect(during.body).toEqual({ statusCode: 503, code: 'SERVICE_UNAVAILABLE', message: 'Banco de dados indisponível' });
+        expect(after.status).toBe(200);
+      });
+    });
+
+    it('a documentação declara o 200 e o 503', async () => {
+      const responses = (await t.api.get('/docs-json')).body.paths['/health'].get.responses;
+
+      expect(Object.keys(responses).sort()).toEqual(['200', '503']);
+      expect(responses['200'].content['application/json'].schema.$ref).toBe('#/components/schemas/HealthResponse');
+    });
   });
 
   it('a documentação OpenAPI lista todas as rotas da seção Surface da especificação', async () => {

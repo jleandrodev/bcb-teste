@@ -98,7 +98,7 @@ stateDiagram-v2
 | `GET /messages/:id/status` | - | `status`, `attempts`, `history` | `200`, `401`, `404` | remetente; sem credencial `401`, outro cliente `404` |
 | `PATCH /messages/:id/read` | - | `status`, `history` | `200`, `401`, `404`, `409` | remetente; sem credencial `401`, outro cliente `404` |
 | `GET /queue/status` | - | tamanhos por nível, contadores, anti-starvation, worker | `200` | anyone |
-| `GET /health` | - | `status` | `200` | anyone |
+| `GET /health` | - | `status`, `persistence` | `200`, `503` | anyone |
 
 ## Landing
 
@@ -223,6 +223,7 @@ Quem opera enxerga a fila, e quem avalia vê o sistema funcionando sem ler códi
     - regra de negócio → `code` do domínio; formato inválido → `VALIDATION_FAILED`; rota inexistente → `NOT_FOUND`; JSON malformado → `BAD_REQUEST`; corpo acima de 100 KB → `413` `PAYLOAD_TOO_LARGE`; erro inesperado → `INTERNAL_ERROR`, sem detalhe interno
 41. WHEN `GET /docs` é aberto THEN the system SHALL mostrar a documentação OpenAPI com todas as rotas da seção Surface, o corpo de cada resposta e os status de erro de cada rota
 42. WHEN `scripts/demo.sh` é executado contra a API no ar THEN o script SHALL criar um cliente, enviar duas mensagens normais e cinco urgentes, imprimir a ordem de entrega `u1 u2 u3 n1 u4 u5 n2`, e terminar mostrando um envio recusado com `402` e `code: "INSUFFICIENT_BALANCE"`
+43. WHEN `GET /health` é chamado THEN the system SHALL responder `200` com `status: "ok"` e `persistence` (`memory` ou `postgres`); IF a persistência é PostgreSQL e o banco não responde em 2 s THEN the system SHALL responder `503` com `code: "SERVICE_UNAVAILABLE"`, e voltar a `200` sozinho quando o banco retorna
 
 ## Out of scope
 

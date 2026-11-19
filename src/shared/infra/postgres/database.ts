@@ -3,23 +3,30 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { Pool } from 'pg';
 import type { PoolClient, QueryResultRow } from 'pg';
+import type { Readiness } from '../../application/readiness';
 
 const MIGRATIONS_DIR = join(process.cwd(), 'db', 'migrations');
 /** Chave arbitrária do advisory lock que impede duas instâncias de migrarem ao mesmo tempo. */
 const MIGRATION_LOCK = 72811;
+/** Um banco que não responde neste prazo é tratado como fora do ar pela checagem de saúde. */
+const PING_TIMEOUT_MS = 2000;
 
 /**
  * Acesso ao PostgreSQL. Só existe conexão quando PERSISTENCE=postgres; no modo
  * memória `enabled` é falso e os módulos usam os adaptadores em memória.
  */
 @Injectable()
-export class Database implements OnModuleInit, OnModuleDestroy {
+export class Database implements OnModuleInit, OnModuleDestroy, Readiness {
   private readonly logger = new Logger(Database.name);
   private readonly pool: Pool | null =
     process.env.PERSISTENCE === 'postgres' ? new Pool({ connectionString: process.env.DATABASE_URL }) : null;
 
   get enabled(): boolean {
     return this.pool !== null;
+  }
+
+  get persistence(): 'memory' | 'postgres' {
+    return this.pool ? 'postgres' : 'memory';
   }
 
   async onModuleInit(): Promise<void> {
@@ -35,6 +42,23 @@ export class Database implements OnModuleInit, OnModuleDestroy {
 
   async query<Row extends QueryResultRow>(sql: string, params: unknown[] = []): Promise<Row[]> {
     return (await this.connected().query<Row>(sql, params)).rows;
+  }
+
+  /** Em memória, sempre pronto; com PostgreSQL, só se o banco responde a uma consulta trivial dentro do prazo. */
+  async isReady(): Promise<boolean> {
+    if (!this.pool) return true;
+    let timer: NodeJS.Timeout | undefined;
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error('sem resposta do PostgreSQL')), PING_TIMEOUT_MS);
+    });
+    try {
+      await Promise.race([this.query('SELECT 1'), timeout]);
+      return true;
+    } catch {
+      return false;
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   /** Executa `work` em uma transação: COMMIT se terminar, ROLLBACK se lançar. */

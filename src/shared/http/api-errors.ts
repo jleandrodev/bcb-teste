@@ -23,6 +23,7 @@ const DESCRIPTIONS: Record<number, string> = {
   403: 'Cliente inativo (CLIENT_INACTIVE)',
   404: 'Não encontrado, ou pertence a outro cliente',
   409: 'Conflito (DOCUMENT_ALREADY_REGISTERED, INVALID_STATUS_TRANSITION)',
+  503: 'Banco de dados fora do ar (SERVICE_UNAVAILABLE)',
 };
 
 /** Documenta no OpenAPI os status de erro que a rota pode devolver. */
